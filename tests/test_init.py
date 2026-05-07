@@ -297,3 +297,100 @@ def test_skips_remote_when_blank(runner: CliRunner, tmp_path: pathlib.Path) -> N
         ["git", "remote"], cwd=vault, check=True, capture_output=True, text=True
     ).stdout
     assert remotes.strip() == ""
+
+
+def _commit_count(vault: pathlib.Path) -> int:
+    out = subprocess.run(
+        ["git", "rev-list", "--count", "--all"],
+        cwd=vault,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return int(out) if out else 0
+
+
+def _head_message(vault: pathlib.Path) -> str:
+    return subprocess.run(
+        ["git", "log", "-1", "--format=%s"],
+        cwd=vault,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def test_creates_initial_commit_on_fresh_vault(runner: CliRunner, tmp_path: pathlib.Path) -> None:
+    """A fresh vault with no notes still gets a HEAD so downstream
+    commands (sync, the auto-commit hook) don't trip on a commitless repo."""
+    vault = tmp_path / "vault"
+    cfg_dir = tmp_path / "cfg"
+
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input=f"{vault}\n{_DEFAULT_TAIL}",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert _commit_count(vault) == 1
+    assert _head_message(vault).startswith("init: ")
+
+
+def test_adopts_uncommitted_files_into_initial_commit(
+    runner: CliRunner, tmp_path: pathlib.Path
+) -> None:
+    """When adopting a vault whose git repo has no commits but has
+    uncommitted files, the bootstrap commit picks them up."""
+    vault = tmp_path / "vault"
+    (vault / ".om").mkdir(parents=True)
+    subprocess.run(["git", "init", "--quiet"], cwd=vault, check=True)
+    (vault / "note.md").write_text("preexisting\n", encoding="utf-8")
+    cfg_dir = tmp_path / "cfg"
+
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input=f"{vault}\n{_DEFAULT_TAIL}",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert _commit_count(vault) == 1
+    head_files = (
+        subprocess.run(
+            ["git", "show", "--name-only", "--format=", "HEAD"],
+            cwd=vault,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        .stdout.strip()
+        .splitlines()
+    )
+    assert "note.md" in head_files
+
+
+def test_does_not_recommit_when_adopting_repo_with_history(
+    runner: CliRunner, tmp_path: pathlib.Path
+) -> None:
+    """Adopting a vault that already has commits must not add an empty
+    `init:` commit — that would pollute the user's history."""
+    vault = tmp_path / "vault"
+    (vault / ".om").mkdir(parents=True)
+    subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=vault, check=True)
+    subprocess.run(["git", "config", "user.email", "x@y"], cwd=vault, check=True)
+    subprocess.run(["git", "config", "user.name", "X"], cwd=vault, check=True)
+    (vault / "note.md").write_text("preexisting\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "preexisting"], cwd=vault, check=True)
+    cfg_dir = tmp_path / "cfg"
+
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input=f"{vault}\n{_DEFAULT_TAIL}",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert _commit_count(vault) == 1
+    assert _head_message(vault) == "preexisting"

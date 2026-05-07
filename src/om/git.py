@@ -64,6 +64,28 @@ def commit_all(vault: pathlib.Path, message: str) -> None:
     )
 
 
+def commit_all_allow_empty(vault: pathlib.Path, message: str) -> None:
+    """Like `commit_all`, but creates the commit even when nothing is
+    staged. Used by `om init` to guarantee a fresh vault has a HEAD even
+    if the user hasn't created any notes yet."""
+    subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
+    subprocess.run(
+        ["git", "commit", "--quiet", "--allow-empty", "-m", message],
+        cwd=vault,
+        check=True,
+    )
+
+
+def has_head(vault: pathlib.Path) -> bool:
+    """True if the repo has at least one commit (HEAD resolves)."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
+        cwd=vault,
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
 def has_remote(vault: pathlib.Path) -> bool:
     """True if at least one git remote is configured."""
     out = subprocess.run(

@@ -82,18 +82,12 @@ def test_noop_when_clean(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     write_cfg(cfg_dir, vault)
     # Establish a baseline commit so the tree is clean.
     (vault / "README.md").write_text("hello\n", encoding="utf-8")
     _git(vault, "add", "-A")
     _git(vault, "commit", "--quiet", "-m", "baseline")
-
-    # Suppress usage logging so it doesn't dirty the tree on this invocation.
-    from om import usage_log
-
-    monkeypatch.setattr(usage_log, "log_invocation", lambda *_, **__: None)
 
     before = _commit_count(vault)
     result = runner.invoke(cli, ["note", "--help"])
@@ -125,8 +119,7 @@ def test_working_tree_clean_after_successful_command(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """After a successful command, nothing should remain unstaged — the
-    usage.log line that this invocation appended must be in the commit."""
+    """After a successful command, nothing should remain unstaged."""
     del freeze_now
     fake_editor.append(_append("body\n"))
     write_cfg(cfg_dir, vault)
@@ -136,10 +129,6 @@ def test_working_tree_clean_after_successful_command(
 
     status = _git(vault, "status", "--porcelain").strip()
     assert status == "", f"unexpected dirty tree: {status!r}"
-
-    # And the usage.log line for this command should be in HEAD.
-    head_files = _git(vault, "show", "--name-only", "--format=", "HEAD").strip().splitlines()
-    assert ".om/usage.log" in head_files
 
 
 def test_timestamp_is_utc_iso_z(

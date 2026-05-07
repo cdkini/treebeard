@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 import shutil
+from datetime import UTC, datetime
 
 import click
 
@@ -52,6 +53,17 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
 
     config = Config(vault=vault_path, editor=editor)
     config_path = config.save(config_dir)
+
+    # Guarantee the repo has a HEAD so downstream commands (sync, the
+    # auto-commit hook, etc.) don't trip on a commitless repo. Skip when
+    # adopting a vault that already has commits — don't pollute history.
+    if not git.has_head(vault_path):
+        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        message = f"init: {ts}"
+        if git.has_changes(vault_path):
+            git.commit_all(vault_path, message)
+        else:
+            git.commit_all_allow_empty(vault_path, message)
 
     if adopted:
         click.echo(f"Adopted existing vault at {vault_path}")

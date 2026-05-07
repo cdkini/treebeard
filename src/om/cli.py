@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 import click
 
-from om import __version__, git, usage_log
+from om import __version__, git
 from om.commands import iter_commands
 from om.config import load_vault_path
 
@@ -25,19 +25,16 @@ from om.config import load_vault_path
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """Root command group. Bare `om` launches the picker."""
-    # Subcommands set ctx.obj["config_dir"] so logging targets the same
-    # vault the command actually used (not just the default location).
+    # Subcommands set ctx.obj["config_dir"] so the auto-commit hook
+    # targets the same vault the command actually used.
     ctx.ensure_object(dict)
-    # One callback so the order is explicit. `call_on_close` runs LIFO,
-    # which made a two-callback setup easy to get backwards — see
-    # https://click.palletsprojects.com/en/stable/api/#click.Context.call_on_close
     ctx.call_on_close(lambda: _on_close(ctx))
 
     if ctx.invoked_subcommand is None:
         # Dispatch to the find picker with the recent-only cap. Setting
-        # invoked_subcommand makes `_on_close` run the auto-commit +
-        # usage-log path with subject "find" (instead of bailing out for
-        # a no-subcommand call).
+        # invoked_subcommand makes `_on_close` run the auto-commit path
+        # with subject "find" (instead of bailing out for a no-subcommand
+        # call).
         from om.commands import find as find_cmd
 
         ctx.invoked_subcommand = "find"
@@ -45,13 +42,11 @@ def cli(ctx: click.Context) -> None:
 
 
 def _on_close(ctx: click.Context) -> None:
-    """End-of-command housekeeping: append the usage log line, then
-    auto-commit any working-tree changes (including that line). No-ops
-    when no subcommand ran (e.g. `om`, `om --help`)."""
+    """Auto-commit any working-tree changes left by the subcommand.
+    No-ops when no subcommand ran (e.g. `om --help`)."""
     sub = ctx.invoked_subcommand
     if sub is None:
         return
-    usage_log.log_invocation(ctx.obj.get("config_dir"), [sub])
     try:
         vault = load_vault_path(ctx.obj.get("config_dir"))
         if vault is None or not (vault / ".git").is_dir():
