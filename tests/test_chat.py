@@ -160,6 +160,128 @@ def test_multi_turn_threads_through_one_client(
     assert contents == ["one", "A1", "two", "B2"]
 
 
+def test_slash_exit_terminates_loop_without_calling_sdk(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """`/exit` should break out of the REPL without sending the literal
+    string to Claude — we don't want a session_summary turn that says
+    `"the user wrote /exit, here's what that means..."`."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    result = runner.invoke(cli, ["chat", "--config-dir", str(cfg_dir)], input="/exit\n")
+    assert result.exit_code == 0, result.output
+    assert mock_claude_sdk["queries"] == []
+    convo_dir = vault / ".om" / "conversations"
+    assert not convo_dir.exists() or not list(convo_dir.glob("chat-*.jsonl"))
+
+
+def test_slash_exit_after_real_turns_runs_summary(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """`/exit` mid-session: prior turns reach Claude, then the loop ends
+    cleanly and the summary lands."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["replies"] = [["A1"], ["B2"]]
+    result = runner.invoke(
+        cli,
+        ["chat", "--config-dir", str(cfg_dir)],
+        input="one\ntwo\n/exit\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert mock_claude_sdk["queries"] == ["one", "two"]
+    assert "session summary" in result.output
+    assert "turns" in result.output
+    assert "2" in result.output
+
+
+def test_summary_shows_token_totals(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """Token totals should sum across turns, sourced from the transcript."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["usage"] = {"input_tokens": 11, "output_tokens": 7}
+    mock_claude_sdk["replies"] = [["one"], ["two"]]
+    result = runner.invoke(
+        cli,
+        ["chat", "--config-dir", str(cfg_dir)],
+        input="hi\nhi\n/exit\n",
+    )
+    assert result.exit_code == 0, result.output
+    # 11+11 in, 7+7 out
+    assert "22 in / 14 out" in result.output
+
+
+def test_summary_subscription_when_no_costs(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """Subscription users have `cost_usd=None` on every ResultMessage —
+    summary should label that 'subscription' rather than '$0.0000'."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["cost_usd"] = None
+    result = runner.invoke(
+        cli,
+        ["chat", "--config-dir", str(cfg_dir)],
+        input="hi\n/exit\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "subscription" in result.output
+    assert "$" not in result.output
+
+
+def test_summary_dollar_when_costs_present(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["cost_usd"] = 0.0123
+    mock_claude_sdk["replies"] = [["one"], ["two"]]
+    result = runner.invoke(
+        cli,
+        ["chat", "--config-dir", str(cfg_dir)],
+        input="hi\nhi\n/exit\n",
+    )
+    assert result.exit_code == 0, result.output
+    # 0.0123 + 0.0123 = 0.0246
+    assert "$0.0246" in result.output
+
+
+def test_summary_skipped_when_no_turns(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+) -> None:
+    """Open chat, exit immediately — no panel, no spurious zeros."""
+    del mock_claude_sdk
+    write_cfg(cfg_dir, vault)
+    result = runner.invoke(cli, ["chat", "--config-dir", str(cfg_dir)], input="/exit\n")
+    assert result.exit_code == 0, result.output
+    assert "session summary" not in result.output
+
+
 def test_client_options_open_session_in_vault_with_readonly_tools(
     vault: pathlib.Path,
 ) -> None:

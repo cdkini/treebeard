@@ -67,6 +67,20 @@ SYSTEM_PROMPT = (
 # Glyph for the user-input prompt — matches `om init`'s aesthetic.
 PROMPT_GLYPH = "▸"
 
+# REPL-internal commands that exit the loop without being sent to Claude.
+# Compared after stripping. Slash forms are the documented surface (shown
+# in the header); bare aliases catch the common typo of forgetting the
+# slash and aren't advertised.
+EXIT_COMMANDS = frozenset({"/exit", "/quit", "exit", "quit"})
+
+# Slash commands surfaced in the header. Each entry is `(command, blurb)`;
+# the rendered list is alphabetized by command. Keep this in sync with
+# `EXIT_COMMANDS` (slash forms) when a new REPL command is added.
+SLASH_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("/exit", "end the session"),
+    ("/quit", "end the session"),
+)
+
 
 def conversation_path(vault: pathlib.Path, started_at: datetime) -> pathlib.Path:
     stamp = started_at.astimezone(UTC).strftime("%Y%m%d-%H%M%S")
@@ -134,50 +148,126 @@ async def _repl_async(vault: pathlib.Path, model: str) -> None:
 
     _render_header(vault, transcript, model)
 
-    async with _make_client(vault, model) as client:
-        while True:
-            try:
-                user_text = await asyncio.to_thread(_read_line)
-            except EOFError:
-                out.print()
-                status_console.print("[dim]session ended[/dim]")
-                return
-            user_text = user_text.strip()
-            if not user_text:
-                continue
+    try:
+        async with _make_client(vault, model) as client:
+            while True:
+                try:
+                    user_text = await asyncio.to_thread(_read_line)
+                except EOFError:
+                    out.print()
+                    break
+                user_text = user_text.strip()
+                if not user_text:
+                    continue
+                if user_text in EXIT_COMMANDS:
+                    break
 
-            append_jsonl(
-                transcript,
-                {"ts": _now_utc().isoformat(), "role": "user", "content": user_text},
-            )
+                append_jsonl(
+                    transcript,
+                    {"ts": _now_utc().isoformat(), "role": "user", "content": user_text},
+                )
 
-            try:
-                await _run_turn(client, user_text, out, transcript)
-            except ClaudeSDKError as exc:
-                ui.error(f"claude error: {exc}")
-                continue
-            except KeyboardInterrupt:
-                out.print()
-                ui.warn("interrupted")
-                continue
+                try:
+                    await _run_turn(client, user_text, out, transcript)
+                except ClaudeSDKError as exc:
+                    ui.error(f"claude error: {exc}")
+                    continue
+                except KeyboardInterrupt:
+                    out.print()
+                    ui.warn("interrupted")
+                    continue
+    finally:
+        _render_summary(transcript)
 
 
 def _render_header(vault: pathlib.Path, transcript: pathlib.Path, model: str) -> None:
-    body = Text.assemble(
+    parts: list[tuple[str, str]] = [
         ("vault      ", "dim"),
         (f"{vault}\n", "white"),
         ("transcript ", "dim"),
         (f"{transcript}\n", "white"),
         ("model      ", "dim"),
         (f"{model}\n", "white"),
-        ("exit       ", "dim"),
-        ("Ctrl-D or Ctrl-C", "white"),
-    )
+        ("commands   ", "dim"),
+    ]
+    sorted_commands = sorted(SLASH_COMMANDS, key=lambda pair: pair[0])
+    for index, (cmd, blurb) in enumerate(sorted_commands):
+        if index > 0:
+            parts.append(("\n           ", "dim"))
+        parts.append((f"{cmd}  ", "white"))
+        parts.append((blurb, "dim"))
+    body = Text.assemble(*parts)
     status_console.print(
         Panel(
             body,
             title="[bold]om chat[/bold]",
             subtitle="[dim]Claude Code subscription · read-only vault access[/dim]",
+            border_style="cyan",
+            expand=False,
+        )
+    )
+
+
+def _render_summary(transcript: pathlib.Path) -> None:
+    """Print a compact session summary by reading back the transcript.
+
+    The JSONL is the source of truth — each assistant record carries the
+    `usage` dict and `cost_usd` for that turn, so we don't need to track
+    running totals in memory. Silent no-op if the transcript is missing
+    or has no assistant turns (e.g. the user opened chat and exited
+    immediately, or every turn errored before producing a reply).
+    """
+    if not transcript.exists():
+        return
+
+    turns = 0
+    total_in = 0
+    total_out = 0
+    total_cost = 0.0
+    saw_any_cost = False
+    saw_null_cost = False
+
+    for line in transcript.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if record.get("role") != "assistant":
+            continue
+        turns += 1
+        usage = record.get("usage") or {}
+        if isinstance(usage, dict):
+            total_in += int(usage.get("input_tokens") or 0)
+            total_out += int(usage.get("output_tokens") or 0)
+        cost = record.get("cost_usd")
+        if cost is None:
+            saw_null_cost = True
+        else:
+            total_cost += float(cost)
+            saw_any_cost = True
+
+    if turns == 0:
+        return
+
+    if not saw_any_cost:
+        cost_line: tuple[str, str] = ("subscription", "white")
+    elif saw_null_cost:
+        cost_line = (f"${total_cost:.4f} (partial)", "white")
+    else:
+        cost_line = (f"${total_cost:.4f}", "white")
+
+    body = Text.assemble(
+        ("turns      ", "dim"),
+        (f"{turns}\n", "white"),
+        ("tokens     ", "dim"),
+        (f"{total_in} in / {total_out} out\n", "white"),
+        ("cost       ", "dim"),
+        cost_line,
+    )
+    status_console.print(
+        Panel(
+            body,
+            title="[bold]session summary[/bold]",
             border_style="cyan",
             expand=False,
         )
