@@ -6,10 +6,12 @@ import pathlib
 import subprocess
 from collections.abc import Callable
 from datetime import UTC, date, datetime
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
 
+from om import chat as chat_mod
 from om import config as config_mod
 from om import editor as editor_mod
 from om.commands import daily as daily_cmd
@@ -113,9 +115,87 @@ def freeze_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
     monkeypatch.setattr(note_cmd, "_now_utc", fake_now)
     monkeypatch.setattr(editor_mod, "_now_utc", fake_now)
     monkeypatch.setattr(find_cmd, "_now_utc", fake_now)
+    monkeypatch.setattr(chat_mod, "_now_utc", fake_now)
     return queue
 
 
 @pytest.fixture
 def freeze_today(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(daily_cmd, "_today_local", lambda: FROZEN_TODAY)
+
+
+@pytest.fixture
+def mock_claude_sdk(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Patch `om.chat._make_client` with a stub `ClaudeSDKClient` shape
+    that the Claude Agent SDK exposes. Mutate the returned dict to
+    customize per-test behavior:
+      - `replies`: list[list[str]] — per-turn token chunks
+      - `model`: str — AssistantMessage.model
+      - `usage`: dict — AssistantMessage.usage and ResultMessage.usage
+      - `stop_reason`: str — AssistantMessage.stop_reason
+      - `cost_usd`: float — ResultMessage.total_cost_usd
+      - `queries`: list[str] — user prompts the stub saw
+      - `raise`: exception to raise from query() once, then auto-clear
+    """
+    from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+
+    state: dict[str, Any] = {
+        "replies": [["hello", " world"]],
+        "model": "claude-sonnet-4-6",
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+        "stop_reason": "end_turn",
+        "cost_usd": 0.0,
+        "queries": [],
+        "raise": None,
+    }
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *_a: object) -> None:
+            return None
+
+        async def query(self, prompt: str) -> None:
+            exc = state["raise"]
+            if exc is not None:
+                state["raise"] = None
+                raise exc
+            state["queries"].append(prompt)
+
+        async def receive_response(self) -> Any:
+            idx = len(state["queries"]) - 1
+            chunks = state["replies"][idx] if idx < len(state["replies"]) else state["replies"][-1]
+            yield AssistantMessage(
+                content=[TextBlock(text=c) for c in chunks],
+                model=state["model"],
+                parent_tool_use_id=None,
+                error=None,
+                usage=state["usage"],
+                message_id=None,
+                stop_reason=state["stop_reason"],
+                session_id=None,
+                uuid=None,
+            )
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=10,
+                duration_api_ms=8,
+                is_error=False,
+                num_turns=1,
+                session_id="sess",
+                stop_reason=state["stop_reason"],
+                total_cost_usd=state["cost_usd"],
+                usage=state["usage"],
+                result=None,
+                structured_output=None,
+                model_usage=None,
+                permission_denials=None,
+                deferred_tool_use=None,
+                errors=None,
+                api_error_status=None,
+                uuid=None,
+            )
+
+    monkeypatch.setattr(chat_mod, "_make_client", lambda _vault: _FakeClient())
+    return state

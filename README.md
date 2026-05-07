@@ -32,11 +32,18 @@ every note in the vault. Pass `--limit N` to cap.
 `om grep` runs ripgrep through fzf — type to search note contents,
 Enter opens the matched note at the matched line.
 
+`om chat` opens an interactive Claude REPL backed by the Claude Agent SDK.
+It authenticates through the bundled `claude` CLI, which means it uses
+your existing Claude Code login — no API key needed. Each session writes
+a JSONL transcript to `<vault>/.om/conversations/chat-<UTC-timestamp>.jsonl`,
+which the auto-commit hook lands in git on exit. Ctrl-D (or Ctrl-C) exits.
+
 ```bash
 om                # picker (last 20)
 om find           # picker (all notes)
 om find --limit 5 # picker (last 5)
 om grep           # fuzzy-search note contents
+om chat           # interactive Claude REPL
 om help           # show all subcommands
 om note foo       # create or open foo.md
 om daily          # today's daily note
