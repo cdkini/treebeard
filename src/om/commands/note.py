@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import tempfile
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -17,6 +15,7 @@ from om.config import (
     DEFAULT_CONFIG_DIR,
     load_config,
 )
+from om.editor import edit_with_initial, reopen, rewrite_with, run_editor
 from om.frontmatter import Frontmatter, split_document
 
 TIMESTAMP_FILENAME_FMT = "%Y-%m-%dT%H-%M-%S"
@@ -37,14 +36,6 @@ def _slugify(name: str) -> str:
     if not slug:
         raise click.ClickException(f"name {name!r} produces an empty slug")
     return slug
-
-
-def _run_editor(editor: str, path: Path) -> None:
-    # `+` (no number) tells vim/nvim to open at the last line of the file.
-    try:
-        subprocess.run([editor, "+", str(path)], check=True)
-    except subprocess.CalledProcessError as exc:
-        raise click.ClickException(f"editor exited with status {exc.returncode}") from exc
 
 
 @click.command("note")
@@ -86,38 +77,12 @@ def create_or_open_named(
     or reopen it if it already exists."""
     path = vault / f"{slug}.md"
     if not path.exists():
-        _create_named(path, title, now, editor, tags=tags or [])
+        fm = Frontmatter.new(title, now)
+        if tags:
+            fm.tags = list(tags)
+        edit_with_initial(path, fm.serialize() + "\n\n", editor)
         return
-    _reopen(path, editor)
-
-
-def _create_named(
-    path: Path,
-    title: str,
-    now: datetime,
-    editor: str,
-    *,
-    tags: list[str] | None = None,
-) -> None:
-    fm = Frontmatter.new(title, now)
-    if tags:
-        fm.tags = list(tags)
-    initial = fm.serialize() + "\n\n"
-    path.write_text(initial, encoding="utf-8")
-    try:
-        _run_editor(editor, path)
-    except click.ClickException:
-        path.unlink(missing_ok=True)
-        raise
-
-    contents = path.read_text(encoding="utf-8")
-    if contents == initial:
-        path.unlink()
-        click.echo(f"discarded empty note: {path}")
-        return
-
-    _rewrite_with(path, contents, mutate=lambda fm: None)
-    click.echo(str(path))
+    reopen(path, editor)
 
 
 def _create_unnamed(vault: Path, now: datetime, editor: str) -> None:
@@ -131,7 +96,7 @@ def _create_unnamed(vault: Path, now: datetime, editor: str) -> None:
         fh.write(initial)
 
     try:
-        _run_editor(editor, draft)
+        run_editor(editor, draft)
     except click.ClickException:
         draft.unlink(missing_ok=True)
         raise
@@ -160,35 +125,6 @@ def _create_unnamed(vault: Path, now: datetime, editor: str) -> None:
         if not fm.title.strip():
             fm.title = title
 
-    _rewrite_with(draft, contents, mutate=fill_title)
+    rewrite_with(draft, contents, mutate=fill_title)
     draft.rename(final_path)
     click.echo(str(final_path))
-
-
-def _reopen(path: Path, editor: str) -> None:
-    mtime_before = path.stat().st_mtime_ns
-    _run_editor(editor, path)
-    mtime_after = path.stat().st_mtime_ns
-    if mtime_after != mtime_before:
-        contents = path.read_text(encoding="utf-8")
-        bump_ts = _now_utc()
-
-        def bump(fm: Frontmatter) -> None:
-            fm.updated_at = bump_ts
-
-        _rewrite_with(path, contents, mutate=bump)
-    click.echo(str(path))
-
-
-def _rewrite_with(path: Path, contents: str, mutate: Callable[[Frontmatter], None]) -> None:
-    """Re-serialize the frontmatter after applying `mutate(fm)`.
-
-    No-op if the file lacks a parseable frontmatter block — we don't
-    inject one we'd be guessing at.
-    """
-    parsed = split_document(contents)
-    if parsed is None:
-        return
-    fm, body = parsed
-    mutate(fm)
-    path.write_text(fm.serialize() + body, encoding="utf-8")

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from om import editor as editor_mod
 from om.cli import cli
 from om.commands import note as note_cmd
 from om.config import Config
@@ -281,7 +282,12 @@ def test_reopen_bumps_updated_at_when_mtime_moves(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     queue: list[datetime] = [FROZEN_NOW, FROZEN_LATER]
-    monkeypatch.setattr(note_cmd, "_now_utc", lambda: queue.pop(0) if len(queue) > 1 else queue[0])
+
+    def fake_now() -> datetime:
+        return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    monkeypatch.setattr(note_cmd, "_now_utc", fake_now)
+    monkeypatch.setattr(editor_mod, "_now_utc", fake_now)
 
     path = vault / "todo.md"
     path.write_text(

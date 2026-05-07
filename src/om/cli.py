@@ -29,9 +29,7 @@ def cli(ctx: click.Context) -> None:
     # Subcommands set ctx.obj["config_dir"] so logging targets the same
     # vault the command actually used (not just the default location).
     ctx.ensure_object(dict)
-    ctx.call_on_close(
-        lambda: usage_log.log_invocation(ctx.obj.get("config_dir"), argv)
-    )
+    ctx.call_on_close(lambda: usage_log.log_invocation(ctx.obj.get("config_dir"), argv))
 
 
 for command in iter_commands():
