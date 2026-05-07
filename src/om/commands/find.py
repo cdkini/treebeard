@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 
 import click
 
-from om import dependencies, fzf, ui
+from om import fzf, picker, ui
 from om.commands.note import create_named_note, create_scratch
 from om.config import (
     CONFIG_FILENAME,
@@ -25,74 +25,15 @@ from om.config import (
     load_config,
 )
 from om.editor import reopen
-from om.frontmatter import split_document
 from om.post_edit import PostEditAbort, slugify
-from om.timefmt import humanize_mtime
 from om.ui import OmError
 from om.vault import list_recent_notes
 
 BARE_LIMIT = 20
-TITLE_WIDTH = 30
-
-# fzf substitutes `{2}` with the path field for `om find`. Each command
-# is a shell snippet, not an argv list.
-_PREVIEWER_COMMANDS = {
-    "bat": "bat --color=always --style=plain --language=markdown {2}",
-    "glow": "glow -s dark {2}",
-    "cat": "cat {2}",
-}
 
 
 def _now_utc() -> datetime:
     return datetime.now(UTC)
-
-
-def _preview_cmd(configured: str) -> str:
-    """Pick the preview renderer.
-
-    Try the user's configured previewer first, then walk the rest of the
-    valid list. `cat` is always present, so the ladder always terminates
-    in a usable command — no synthetic floor needed.
-    """
-    order = [configured, *(name for name in _PREVIEWER_COMMANDS if name != configured)]
-    for name in order:
-        if dependencies.previewer(name).is_available():
-            return _PREVIEWER_COMMANDS[name]
-    return _PREVIEWER_COMMANDS["cat"]
-
-
-def _truncate(text: str, width: int) -> str:
-    """Pad/truncate `text` to exactly `width` columns. Long values get an
-    ellipsis suffix; short ones are right-padded with spaces so the next
-    column starts at a predictable offset."""
-    if len(text) <= width:
-        return text.ljust(width)
-    return text[: width - 1] + "…"
-
-
-def _format_line(path: pathlib.Path, now: float) -> str:
-    """`{title-padded}  {ago}\\t{abspath}`.
-
-    The first field is what fzf shows and matches; the second (path) is
-    what `{2}` resolves to in `--preview`. After title-canonical renames
-    the filename stem always equals `slugify(title)`, so we don't show
-    the stem separately. Title is truncated to `TITLE_WIDTH` so the ago
-    column stays aligned across rows.
-    """
-    try:
-        contents = path.read_text(encoding="utf-8")
-    except OSError:
-        contents = ""
-    parsed = split_document(contents)
-    title = parsed[0].title.strip() if parsed is not None else ""
-    if not title:
-        title = path.stem
-    try:
-        ago = humanize_mtime(now - path.stat().st_mtime)
-    except OSError:
-        ago = ""
-    display = f"{_truncate(title, TITLE_WIDTH)}  {ago}"
-    return f"{display}\t{path}"
 
 
 def _run_fzf(lines: list[str], previewer: str) -> tuple[str, str, str]:
@@ -107,7 +48,7 @@ def _run_fzf(lines: list[str], previewer: str) -> tuple[str, str, str]:
         *fzf.base_args("om> ", header="enter: open  ctrl-n: new note"),
         "--delimiter=\t",
         "--with-nth=1",
-        f"--preview={_preview_cmd(previewer)}",
+        f"--preview={picker.preview_cmd(previewer)}",
         "--preview-window=right:60%",
         "--expect=ctrl-n",
         "--print-query",
@@ -136,7 +77,7 @@ def run(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> 
         return
 
     now_seconds = time.time()
-    lines = [_format_line(p, now_seconds) for p in paths]
+    lines = [picker.format_line(p, now_seconds) for p in paths]
     query, key, selection = _run_fzf(lines, previewer)
 
     if key == "ctrl-n":
