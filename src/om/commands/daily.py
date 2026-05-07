@@ -24,8 +24,10 @@ def _today_local() -> date:
     default=None,
     help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
 )
-def command(config_dir: str | None) -> None:
+@click.pass_context
+def command(ctx: click.Context, config_dir: str | None) -> None:
     """Create or open today's daily note in the vault."""
+    ctx.ensure_object(dict)["config_dir"] = config_dir
     vault = load_vault_path(config_dir)
     if vault is None:
         raise click.ClickException("no vault configured; run `om init` first")

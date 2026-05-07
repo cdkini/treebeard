@@ -64,8 +64,10 @@ def _run_editor(editor: str, path: Path) -> None:
     default=None,
     help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
 )
-def command(name: str | None, config_dir: str | None) -> None:
+@click.pass_context
+def command(ctx: click.Context, name: str | None, config_dir: str | None) -> None:
     """Create or open a markdown note in the vault and edit it with $EDITOR."""
+    ctx.ensure_object(dict)["config_dir"] = config_dir
     vault = load_vault_path(config_dir)
     if vault is None:
         raise click.ClickException("no vault configured; run `om init` first")

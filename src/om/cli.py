@@ -23,11 +23,15 @@ from om.commands import iter_commands
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """Root command group."""
-    # `init` logs itself after creating the vault, since the vault
-    # doesn't exist yet at this point. Other commands log here, before
-    # dispatch, against the default config location.
-    if ctx.invoked_subcommand and ctx.invoked_subcommand != "init":
-        usage_log.log_invocation(None, sys.argv[1:])
+    argv = sys.argv[1:]
+    if not argv:
+        return
+    # Subcommands set ctx.obj["config_dir"] so logging targets the same
+    # vault the command actually used (not just the default location).
+    ctx.ensure_object(dict)
+    ctx.call_on_close(
+        lambda: usage_log.log_invocation(ctx.obj.get("config_dir"), argv)
+    )
 
 
 for command in iter_commands():

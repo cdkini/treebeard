@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import sys
-
 import click
 
-from om import usage_log
 from om.config import (
     CONFIG_FILENAME,
     DEFAULT_CONFIG_DIR,
@@ -26,8 +23,10 @@ from om.config import (
     default=None,
     help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
 )
-def command(path: str, config_dir: str | None) -> None:
+@click.pass_context
+def command(ctx: click.Context, path: str, config_dir: str | None) -> None:
     """Scaffold a new om vault at PATH and record it in the config file."""
+    ctx.ensure_object(dict)["config_dir"] = config_dir
     vault_path = resolve_user_path(path)
 
     if vault_path.exists():
@@ -54,5 +53,3 @@ def command(path: str, config_dir: str | None) -> None:
 
     click.echo(f"Initialized vault at {vault_path}")
     click.echo(f"Wrote config to {config_path}")
-
-    usage_log.log_invocation(config_dir, sys.argv[1:])
