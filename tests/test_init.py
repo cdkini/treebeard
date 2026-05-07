@@ -23,7 +23,7 @@ def test_happy_path(runner: CliRunner, tmp_path: Path) -> None:
     result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), str(vault)])
 
     assert result.exit_code == 0, result.output
-    assert (vault / ".om-vault").is_file()
+    assert (vault / ".om").is_dir()
     assert f"Initialized vault at {vault}" in result.output
     assert f"Wrote config to {cfg_dir / 'config.toml'}" in result.output
 
@@ -120,7 +120,7 @@ def test_tilde_expansion_uses_home_env(
     result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), "~/vault"])
 
     assert result.exit_code == 0, result.output
-    assert (fake_home / "vault" / ".om-vault").is_file()
+    assert (fake_home / "vault" / ".om").is_dir()
     data = _read_toml(cfg_dir / "config.toml")
     assert data == {"vault": str(fake_home / "vault")}
 
