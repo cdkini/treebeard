@@ -7,6 +7,11 @@ required. Each invocation starts a fresh `ClaudeSDKClient`, which manages
 conversation history inside the session. Every turn is appended to
 `<vault>/.om/conversations/chat-<UTC-timestamp>.jsonl` so the auto-commit
 hook on CLI close picks it up.
+
+Rendering uses Rich: a header `Panel` at startup, then per-turn live
+Markdown rendering inside a `rich.live.Live` context so code blocks,
+lists, and headings flow as the model emits tokens. Falls back to plain
+streaming when stdout isn't a TTY (e.g. piped output, tests).
 """
 
 from __future__ import annotations
@@ -25,10 +30,17 @@ from claude_agent_sdk import (
     ResultMessage,
     StreamEvent,
     TextBlock,
+    ThinkingConfigDisabled,
 )
 from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.spinner import Spinner
+from rich.text import Text
 
 from om import ui
+from om.ui import status_console
 
 # Read-only tools we expose to the chat session. The user's vault is
 # mounted as cwd, so `Read`/`Glob`/`Grep` operate against their notes.
@@ -51,6 +63,9 @@ SYSTEM_PROMPT = (
     "vault contains a CLAUDE.md at the root, treat it as authoritative "
     "context about the user and their notes."
 )
+
+# Glyph for the user-input prompt — matches `om init`'s aesthetic.
+PROMPT_GLYPH = "▸"
 
 
 def conversation_path(vault: pathlib.Path, started_at: datetime) -> pathlib.Path:
@@ -96,6 +111,13 @@ def _make_client(vault: pathlib.Path) -> ClaudeSDKClient:
         setting_sources=["project"],
         cwd=str(vault),
         include_partial_messages=True,
+        # Latency: skip silent reasoning before the first token. Casual
+        # chat doesn't benefit much from extended thinking, and disabling
+        # it cuts several seconds off TTFT on short replies.
+        thinking=ThinkingConfigDisabled(type="disabled"),
+        # Latency: low effort means fewer/consolidated tool calls, less
+        # preamble, terser confirmations. Best fit for chat.
+        effort="low",
     )
     return ClaudeSDKClient(options=options)
 
@@ -107,19 +129,17 @@ def run_repl(vault: pathlib.Path) -> None:
 async def _repl_async(vault: pathlib.Path) -> None:
     started_at = _now_utc()
     transcript = conversation_path(vault, started_at)
-    stdout = Console(highlight=False, soft_wrap=True)
+    out = Console(highlight=False, soft_wrap=True)
 
-    ui.info("chat session — Claude Code subscription")
-    ui.info(f"vault: {vault}")
-    ui.info(f"transcript: {transcript}")
-    ui.info("Ctrl-D or Ctrl-C to exit")
+    _render_header(vault, transcript)
 
     async with _make_client(vault) as client:
         while True:
             try:
-                user_text = await asyncio.to_thread(_read_line, "> ")
+                user_text = await asyncio.to_thread(_read_line)
             except EOFError:
-                stdout.print()
+                out.print()
+                status_console.print("[dim]session ended[/dim]")
                 return
             user_text = user_text.strip()
             if not user_text:
@@ -131,79 +151,115 @@ async def _repl_async(vault: pathlib.Path) -> None:
             )
 
             try:
-                await _run_turn(client, user_text, stdout, transcript)
+                await _run_turn(client, user_text, out, transcript)
             except ClaudeSDKError as exc:
                 ui.error(f"claude error: {exc}")
                 continue
             except KeyboardInterrupt:
-                stdout.print()
+                out.print()
                 ui.warn("interrupted")
                 continue
 
 
-def _read_line(prompt: str) -> str:
-    """Blocking stdin read — runs in a thread so it doesn't block the event
-    loop. Click's `prompt` doesn't compose with asyncio cleanly."""
-    return input(prompt)
+def _render_header(vault: pathlib.Path, transcript: pathlib.Path) -> None:
+    body = Text.assemble(
+        ("vault     ", "dim"),
+        (f"{vault}\n", "white"),
+        ("transcript ", "dim"),
+        (f"{transcript}\n", "white"),
+        ("exit      ", "dim"),
+        ("Ctrl-D or Ctrl-C", "white"),
+    )
+    status_console.print(
+        Panel(
+            body,
+            title="[bold]om chat[/bold]",
+            subtitle="[dim]Claude Code subscription · read-only vault access[/dim]",
+            border_style="cyan",
+            expand=False,
+        )
+    )
+
+
+def _read_line() -> str:
+    """Blocking stdin read — runs in a thread so it doesn't block the
+    event loop. Click's `prompt` doesn't compose with asyncio cleanly."""
+    # Pre-print the styled glyph to stderr (so it survives stdout piping
+    # while still being visible interactively); then a plain `input()`
+    # with no further prompt does the line read.
+    status_console.print(f"[bold cyan]{PROMPT_GLYPH}[/bold cyan] ", end="")
+    return input()
 
 
 async def _run_turn(
     client: ClaudeSDKClient,
     user_text: str,
-    stdout: Console,
+    out: Console,
     transcript: pathlib.Path,
 ) -> None:
-    """Drive one turn: stream text deltas to stdout, then collect the
-    final AssistantMessage (authoritative content) and ResultMessage
-    (cost + duration) for the JSONL record.
+    """Drive one turn: render Markdown live as deltas arrive, then log
+    the final AssistantMessage + ResultMessage to the JSONL transcript.
 
-    Text rendering uses the `StreamEvent` partial-message stream so the
-    user sees tokens as they arrive. The `AssistantMessage` arrives once
-    at end-of-turn with the full assembled content — we use that as the
-    source of truth for what to log, since deltas can in theory be
-    revised. To avoid printing the whole reply twice, we skip the
-    AssistantMessage's TextBlocks at render time but still read them for
-    the transcript.
+    Text source of truth is the assembled content from `AssistantMessage`
+    (authoritative — deltas can in theory be revised). The Live panel is
+    fed the running buffer of stream deltas; if no deltas arrive (older
+    CLIs, non-streaming responses), we render the assembled message once
+    at the end.
     """
     await client.query(user_text)
+    buffer: list[str] = []
     final_text = ""
     model: str | None = None
     usage: dict[str, Any] | None = None
     stop_reason: str | None = None
     cost_usd: float | None = None
-    saw_stream_text = False
 
-    async for msg in client.receive_response():
-        if isinstance(msg, StreamEvent):
-            delta_text = _extract_text_delta(msg.event)
-            if delta_text:
-                stdout.out(delta_text, end="")
-                saw_stream_text = True
-        elif isinstance(msg, AssistantMessage):
-            text_blocks = [b.text for b in msg.content if isinstance(b, TextBlock)]
-            assembled = "".join(text_blocks)
-            if not saw_stream_text and assembled:
-                # Older CLIs / non-streaming paths: nothing came through
-                # StreamEvent, so render the assembled message now.
-                stdout.out(assembled, end="")
-            final_text = assembled
-            model = msg.model
-            if msg.usage is not None:
-                usage = msg.usage
-            if msg.stop_reason is not None:
-                stop_reason = msg.stop_reason
-        elif isinstance(msg, ResultMessage):
-            cost_usd = msg.total_cost_usd
-            if msg.usage is not None and usage is None:
-                usage = msg.usage
-            if msg.stop_reason is not None and stop_reason is None:
-                stop_reason = msg.stop_reason
-    stdout.print()
+    # Start with a spinner so the user can see the system is working
+    # while we wait for the first token. Swap the renderable to a
+    # Markdown panel as soon as text arrives.
+    with Live(
+        Spinner("dots", text=Text("thinking…", style="dim")),
+        console=out,
+        refresh_per_second=12,
+        transient=False,
+        vertical_overflow="visible",
+    ) as live:
+        first_text_seen = False
+        async for msg in client.receive_response():
+            if isinstance(msg, StreamEvent):
+                delta_text = _extract_text_delta(msg.event)
+                if delta_text:
+                    buffer.append(delta_text)
+                    first_text_seen = True
+                    live.update(Markdown("".join(buffer)))
+            elif isinstance(msg, AssistantMessage):
+                text_blocks = [b.text for b in msg.content if isinstance(b, TextBlock)]
+                assembled = "".join(text_blocks)
+                final_text = assembled
+                if not first_text_seen and assembled:
+                    # No StreamEvents arrived; render the assembled
+                    # message into the Live panel in one shot.
+                    live.update(Markdown(assembled))
+                    first_text_seen = True
+                model = msg.model
+                if msg.usage is not None:
+                    usage = msg.usage
+                if msg.stop_reason is not None:
+                    stop_reason = msg.stop_reason
+            elif isinstance(msg, ResultMessage):
+                cost_usd = msg.total_cost_usd
+                if msg.usage is not None and usage is None:
+                    usage = msg.usage
+                if msg.stop_reason is not None and stop_reason is None:
+                    stop_reason = msg.stop_reason
+
+    # Thin separator between turns (dim rule, no body).
+    status_console.rule(style="dim")
 
     record: dict[str, Any] = {
         "ts": _now_utc().isoformat(),
         "role": "assistant",
-        "content": final_text,
+        "content": final_text or "".join(buffer),
         "model": model,
         "usage": usage,
         "stop_reason": stop_reason,
