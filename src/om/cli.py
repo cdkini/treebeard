@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from om import __version__, dependencies, editor, git, ui
+from om import __version__, dependencies, editor, git, ui, usage_log
 from om.commands import iter_commands
 from om.config import load_sync_warn_threshold, load_vault_path
 from om.editor import apply_post_edit
@@ -121,8 +121,9 @@ def _on_close(ctx: click.Context) -> None:
     sub = ctx.invoked_subcommand
     if sub is None:
         return
+    config_dir = ctx.obj.get("config_dir")
+    usage_log.log_invocation(config_dir, [sub])
     try:
-        config_dir = ctx.obj.get("config_dir")
         vault = load_vault_path(config_dir)
         if vault is None or not (vault / ".git").is_dir():
             return
