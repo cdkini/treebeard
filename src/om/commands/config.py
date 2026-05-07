@@ -23,7 +23,7 @@ from om.config import (
 )
 @click.pass_context
 def command(ctx: click.Context, config_dir: str | None) -> None:
-    """Open the om config file in the configured editor."""
+    """Open the config file in your configured editor."""
     ctx.ensure_object(dict)["config_dir"] = config_dir
     cfg = load_config(config_dir)
     path = config_path_for(config_dir)

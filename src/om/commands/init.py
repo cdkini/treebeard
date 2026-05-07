@@ -29,7 +29,7 @@ from om.config import (
 )
 @click.pass_context
 def command(ctx: click.Context, config_dir: str | None) -> None:
-    """Scaffold a new om vault and record its location and editor choice."""
+    """Scaffold a new om vault or link to an existing one."""
     ctx.ensure_object(dict)["config_dir"] = config_dir
 
     if is_initialized(config_dir):

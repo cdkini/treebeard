@@ -49,7 +49,7 @@ def _slugify(name: str) -> str:
 )
 @click.pass_context
 def command(ctx: click.Context, name: str | None, config_dir: str | None) -> None:
-    """Create or open a markdown note in the vault and edit it with the configured editor."""
+    """Create or open a markdown note in the vault."""
     ctx.ensure_object(dict)["config_dir"] = config_dir
     cfg = load_config(config_dir)
 
