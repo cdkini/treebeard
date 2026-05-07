@@ -49,11 +49,14 @@ class RichGroup(click.Group):
         # Render the Rich table to a string and feed it into Click's
         # formatter buffer so `--help` output remains a single contiguous
         # chunk (and `om help` echoing `parent.get_help()` works).
+        # `force_terminal=True` makes Rich emit ANSI escapes into the
+        # StringIO buffer; `click.echo` then strips them when the final
+        # sink isn't an interactive terminal, so pipes stay clean.
         buf = io.StringIO()
-        Console(file=buf, force_terminal=False, width=formatter.width or 100).print(
+        Console(file=buf, force_terminal=True, width=formatter.width or 100).print(
             "\n[bold]Commands[/bold]"
         )
-        Console(file=buf, force_terminal=False, width=formatter.width or 100).print(table)
+        Console(file=buf, force_terminal=True, width=formatter.width or 100).print(table)
         formatter.write(buf.getvalue())
 
 
