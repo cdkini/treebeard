@@ -70,17 +70,30 @@ def is_initialized(config_dir: str | None) -> bool:
     return "vault" in raw or "editor" in raw
 
 
+def is_valid_vault(vault: pathlib.Path) -> tuple[bool, str | None]:
+    """An om vault is a directory containing both `.om/` and `.git/`.
+    Returns `(ok, reason)` — `reason` is a user-facing string when not ok."""
+    if not vault.is_dir():
+        return False, f"vault {vault} does not exist"
+    if not (vault / ".om").is_dir():
+        return False, f"{vault} is missing .om/ (not an om vault)"
+    if not (vault / ".git").is_dir():
+        return False, f"{vault} is missing .git/ (run `git init` or restore from a backup)"
+    return True, None
+
+
 def load_config(config_dir: str | None) -> Config:
     """Read the config file. Raises `click.ClickException` if no vault
-    is configured or the configured vault is missing. Defaults the
-    editor to `vim` when the field is absent."""
+    is configured or the configured vault isn't a valid om vault.
+    Defaults the editor to `vim` when the field is absent."""
     raw = _read_raw(config_path_for(config_dir))
     vault_raw = raw.get("vault")
     if not isinstance(vault_raw, str) or not vault_raw:
         raise click.ClickException("no vault configured; run `om init` first")
     vault = pathlib.Path(vault_raw)
-    if not vault.is_dir():
-        raise click.ClickException(f"configured vault {vault} does not exist")
+    ok, reason = is_valid_vault(vault)
+    if not ok:
+        raise click.ClickException(reason or f"invalid vault {vault}")
     editor = raw.get("editor")
     if not isinstance(editor, str) or not editor:
         editor = DEFAULT_EDITOR

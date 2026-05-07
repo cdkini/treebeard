@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import subprocess
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 
@@ -21,6 +22,23 @@ FROZEN_TODAY = date(2026, 5, 7)
 EditorFake = Callable[[str, pathlib.Path], None]
 
 
+@pytest.fixture(autouse=True)
+def _isolated_git_global(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Point git at a throwaway global config so the auto-commit hook
+    has identity available without reading the developer's real
+    `~/.gitconfig`. Tests that exercise the init prompts also rely on
+    this for predictable defaults."""
+    fake = tmp_path_factory.mktemp("gitcfg") / "config"
+    fake.write_text(
+        "[user]\n\temail = test@example.com\n\tname = Test User\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(fake))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+
+
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
@@ -30,6 +48,7 @@ def runner() -> CliRunner:
 def vault(tmp_path: pathlib.Path) -> pathlib.Path:
     v = tmp_path / "vault"
     (v / ".om").mkdir(parents=True)
+    subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=v, check=True)
     return v
 
 

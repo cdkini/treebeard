@@ -7,6 +7,7 @@ import shutil
 
 import click
 
+from om import git
 from om.config import (
     CONFIG_FILENAME,
     DEFAULT_CONFIG_DIR,
@@ -39,13 +40,23 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
     vault_path = _prompt_vault_path()
     editor = _prompt_editor()
 
-    vault_path.mkdir()
-    (vault_path / ".om").mkdir()
+    adopted = (vault_path / ".om").is_dir() and (vault_path / ".git").is_dir()
+
+    vault_path.mkdir(parents=True, exist_ok=True)
+    (vault_path / ".om").mkdir(exist_ok=True)
+    git.ensure_initialized(vault_path)
+
+    _ensure_git_identity(vault_path)
+    if not git.has_remote(vault_path):
+        _maybe_add_remote(vault_path)
 
     config = Config(vault=vault_path, editor=editor)
     config_path = config.save(config_dir)
 
-    click.echo(f"Initialized vault at {vault_path}")
+    if adopted:
+        click.echo(f"Adopted existing vault at {vault_path}")
+    else:
+        click.echo(f"Initialized vault at {vault_path}")
     click.echo(f"Wrote config to {config_path}")
 
 
@@ -56,12 +67,21 @@ def _prompt_vault_path() -> pathlib.Path:
             click.echo("path must not be empty")
             continue
         candidate = resolve_user_path(raw)
-        if candidate.exists():
-            click.echo(f"{candidate} already exists")
+        if candidate.exists() and not candidate.is_dir():
+            click.echo(f"{candidate} is not a directory")
             continue
-        if not candidate.parent.exists():
-            click.echo(f"parent directory {candidate.parent} does not exist")
-            continue
+        if candidate.is_dir():
+            has_om = (candidate / ".om").is_dir()
+            has_git = (candidate / ".git").is_dir()
+            if has_om and not has_git:
+                click.echo(
+                    f"{candidate} has .om/ but no .git/ "
+                    "(corrupted vault — restore from backup or remove .om/ first)"
+                )
+                continue
+            if not has_om and any(candidate.iterdir()):
+                click.echo(f"{candidate} is not empty and is not an om vault; refusing to use it")
+                continue
         return candidate
 
 
@@ -73,3 +93,24 @@ def _prompt_editor() -> str:
         default=default,
         show_choices=True,
     )
+
+
+def _ensure_git_identity(vault: pathlib.Path) -> None:
+    """Make sure user.email and user.name are set in this repo. Defaults
+    to whatever git already resolves (typically the global config); the
+    user can override at the prompt. Stored in `<vault>/.git/config`."""
+    for key, label in (("user.email", "Git email"), ("user.name", "Git name")):
+        existing = git.get_config(vault, key)
+        value = click.prompt(label, default=existing, show_default=existing is not None).strip()
+        if not value:
+            raise click.ClickException(f"{key} is required")
+        git.set_config(vault, key, value)
+
+
+def _maybe_add_remote(vault: pathlib.Path) -> None:
+    """Optional: add an `origin` remote pointing at a URL the user
+    provides. Blank input skips."""
+    url = click.prompt("Git remote URL (blank to skip)", default="", show_default=False).strip()
+    if not url:
+        return
+    git.add_remote(vault, "origin", url)
