@@ -189,10 +189,10 @@ def test_unnamed_falls_back_to_timestamp_when_title_left_empty(
         env={"EDITOR": str(script)},
     )
     assert result.exit_code == 0, result.output
-    path = vault / "2026-05-07T14-23-05.md"
+    path = vault / "scratch-2026-05-07t14-23-05.md"
     assert path.exists()
     text = path.read_text(encoding="utf-8")
-    assert "title: 2026-05-07T14-23-05\n" in text
+    assert "title: Scratch 2026-05-07T14-23-05\n" in text
     assert text.endswith("just a body\n")
     # Draft tempfile cleaned up.
     drafts = vault / ".om" / "drafts"
@@ -218,7 +218,7 @@ def test_unnamed_uses_edited_title_for_filename(
     assert path.exists()
     assert "title: My Great Idea\n" in path.read_text(encoding="utf-8")
     # No timestamp file.
-    assert not (vault / "2026-05-07T14-23-05.md").exists()
+    assert not (vault / "scratch-2026-05-07t14-23-05.md").exists()
 
 
 def test_unnamed_discards_when_unchanged(

@@ -81,17 +81,39 @@ def command(name: str | None, config_dir: str | None) -> None:
 
     slug = _slugify(name)
     stripped = name[:-3] if name.endswith(".md") else name
+    create_or_open_named(vault, slug, stripped, now, editor)
+
+
+def create_or_open_named(
+    vault: Path,
+    slug: str,
+    title: str,
+    now: datetime,
+    editor: str,
+    *,
+    tags: list[str] | None = None,
+) -> None:
+    """Create `vault/{slug}.md` with frontmatter and open `$EDITOR`,
+    or reopen it if it already exists."""
     path = vault / f"{slug}.md"
-
     if not path.exists():
-        _create_named(path, stripped, now, editor)
+        _create_named(path, title, now, editor, tags=tags or [])
         return
-
     _reopen(path, editor)
 
 
-def _create_named(path: Path, title: str, now: datetime, editor: str) -> None:
-    initial = Frontmatter.new(title, now).serialize() + "\n"
+def _create_named(
+    path: Path,
+    title: str,
+    now: datetime,
+    editor: str,
+    *,
+    tags: list[str] | None = None,
+) -> None:
+    fm = Frontmatter.new(title, now)
+    if tags:
+        fm.tags = list(tags)
+    initial = fm.serialize() + "\n"
     path.write_text(initial, encoding="utf-8")
     try:
         _run_editor(editor, path)
@@ -133,7 +155,13 @@ def _create_unnamed(vault: Path, now: datetime, editor: str) -> None:
 
     parsed = split_document(contents)
     edited_title = parsed[0].title.strip() if parsed is not None else ""
-    slug = _slugify(edited_title) if edited_title else now.strftime(TIMESTAMP_FILENAME_FMT)
+    if edited_title:
+        title = edited_title
+        slug = _slugify(edited_title)
+    else:
+        ts = now.strftime(TIMESTAMP_FILENAME_FMT)
+        title = f"Scratch {ts}"
+        slug = f"scratch-{ts.lower()}"
 
     final_path = vault / f"{slug}.md"
     if final_path.exists():
@@ -141,7 +169,7 @@ def _create_unnamed(vault: Path, now: datetime, editor: str) -> None:
 
     def fill_title(fm: Frontmatter) -> None:
         if not fm.title.strip():
-            fm.title = slug
+            fm.title = title
 
     _rewrite_with(draft, contents, mutate=fill_title)
     draft.rename(final_path)
