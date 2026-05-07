@@ -13,6 +13,7 @@ from click.testing import CliRunner
 from om import config as config_mod
 from om import editor as editor_mod
 from om.commands import daily as daily_cmd
+from om.commands import find as find_cmd
 from om.commands import note as note_cmd
 from om.config import Config
 
@@ -91,9 +92,6 @@ def fake_editor(monkeypatch: pytest.MonkeyPatch) -> list[EditorFake]:
             queue.pop(0)(editor, path)
 
     monkeypatch.setattr(editor_mod, "run_editor", fake_run_editor)
-    # `note._create_unnamed` imports `run_editor` directly, so the rebound
-    # name in that module needs patching too.
-    monkeypatch.setattr(note_cmd, "run_editor", fake_run_editor)
     return queue
 
 
@@ -108,6 +106,7 @@ def freeze_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
 
     monkeypatch.setattr(note_cmd, "_now_utc", fake_now)
     monkeypatch.setattr(editor_mod, "_now_utc", fake_now)
+    monkeypatch.setattr(find_cmd, "_now_utc", fake_now)
     return queue
 
 

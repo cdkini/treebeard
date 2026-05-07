@@ -4,7 +4,10 @@
 
 ## Setup
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+.
+Requires [uv](https://docs.astral.sh/uv/), Python 3.12+, and [`fzf`](https://github.com/junegunn/fzf)
+(`brew install fzf`). [`bat`](https://github.com/sharkdp/bat) is optional —
+the picker uses it for syntax-highlighted previews when present, falling
+back to `cat`.
 
 ```bash
 make install
@@ -12,16 +15,27 @@ make install
 
 ## Usage
 
+Bare `om` opens an interactive picker over the 20 most recently edited
+notes (mtime sorted). Enter opens the highlighted note in your editor;
+Ctrl-N creates a new note named after whatever you've typed.
+
+`om find` is the same picker without the recent-only cap — it lists
+every note in the vault. Pass `--limit N` to cap.
+
 ```bash
-uv run om --help
+om                # picker (last 20)
+om find           # picker (all notes)
+om find --limit 5 # picker (last 5)
+om help           # show all subcommands
+om note foo       # create or open foo.md
+om daily          # today's daily note
 ```
 
-Or activate the venv and use `om` directly:
-
-```bash
-source .venv/bin/activate
-om --help
-```
+Filenames are derived from the frontmatter `title:`. After every save
+the file is renamed to match `slugify(title)` — the title is the source
+of truth. An empty title falls back to `scratch-<timestamp>.md` and stays
+that way until you give it a name. Daily-tagged notes are protected:
+edits that would rename a daily off its date filename are reverted.
 
 ## Development
 

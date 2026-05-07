@@ -136,32 +136,33 @@ def test_strips_md_extension_and_reopens(
     assert sorted(p.name for p in vault.glob("*.md")) == ["foo.md"]
 
 
-def test_unnamed_falls_back_to_timestamp(
+def test_unnamed_creates_scratch_in_vault_root(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
+    """No NAME → vault/scratch-<ts>.md. Empty title stays scratch."""
     del freeze_now
     fake_editor.append(append("just a body\n"))
     write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     path = vault / "scratch-2026-05-07t14-23-05.md"
-    text = path.read_text(encoding="utf-8")
-    assert "title: Scratch 2026-05-07T14-23-05\n" in text
-    assert text.endswith("just a body\n")
-    assert list((vault / ".om" / "drafts").iterdir()) == []
+    assert path.exists()
+    assert path.read_text(encoding="utf-8").endswith("just a body\n")
+    assert not (vault / ".om" / "drafts").exists()
 
 
-def test_unnamed_uses_edited_title_for_filename(
+def test_unnamed_renames_to_slug_when_title_added(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
+    """No NAME, but the user adds a title → file is renamed to slug."""
     del freeze_now
     fake_editor.append(set_title("My Great Idea"))
     write_cfg(cfg_dir, vault)
@@ -171,23 +172,25 @@ def test_unnamed_uses_edited_title_for_filename(
     assert not (vault / "scratch-2026-05-07t14-23-05.md").exists()
 
 
-def test_unnamed_collision_keeps_draft(
+def test_unnamed_collision_reverts(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
+    """User titles a scratch with a name that collides → revert; existing file untouched."""
     del freeze_now
     (vault / "todo.md").write_text("pre-existing\n", encoding="utf-8")
     fake_editor.append(set_title("todo"))
     write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
-    assert result.exit_code != 0
-    assert "already exists" in result.output
-    assert "draft kept at" in result.output
+    assert result.exit_code == 0, result.output
+    assert "edit reverted" in result.output
+    assert "todo.md" in result.output
     assert (vault / "todo.md").read_text(encoding="utf-8") == "pre-existing\n"
-    assert len(list((vault / ".om" / "drafts").iterdir())) == 1
+    # The scratch file was deleted on revert (snapshot was None — file didn't exist before).
+    assert not (vault / "scratch-2026-05-07t14-23-05.md").exists()
 
 
 def test_reopen_does_not_clobber_when_unchanged(
@@ -228,7 +231,7 @@ def test_reopen_bumps_updated_at(
     path = vault / "todo.md"
     path.write_text(
         "---\n"
-        "title: My Todo\n"
+        "title: todo\n"
         "source: user\n"
         "created_at: 2020-01-01T00:00:00Z\n"
         "updated_at: 2020-01-01T00:00:00Z\n"

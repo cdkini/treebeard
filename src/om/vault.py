@@ -30,3 +30,15 @@ def find_prior_daily(vault: pathlib.Path, today: date) -> tuple[pathlib.Path, da
         if best is None or entry_date > best[1]:
             best = (entry, entry_date)
     return best
+
+
+def list_recent_notes(vault: pathlib.Path, limit: int | None = 10) -> list[pathlib.Path]:
+    """Return markdown files in the vault, mtime desc, optionally capped.
+
+    `.om/` and `.git/` don't contain `.md` files, so a plain rglob is
+    enough — no exclude list needed. `limit=None` returns every note.
+    """
+    entries = [(entry.stat().st_mtime, entry) for entry in vault.rglob("*.md")]
+    entries.sort(key=lambda item: item[0], reverse=True)
+    paths = [path for _, path in entries]
+    return paths if limit is None else paths[:limit]

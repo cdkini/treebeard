@@ -19,11 +19,12 @@ from om.config import load_vault_path
 @click.group(
     help="om — the omniscience CLI.",
     context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
 )
 @click.version_option(__version__, "-V", "--version", prog_name="om")
 @click.pass_context
 def cli(ctx: click.Context) -> None:
-    """Root command group."""
+    """Root command group. Bare `om` launches the picker."""
     # Subcommands set ctx.obj["config_dir"] so logging targets the same
     # vault the command actually used (not just the default location).
     ctx.ensure_object(dict)
@@ -31,6 +32,16 @@ def cli(ctx: click.Context) -> None:
     # which made a two-callback setup easy to get backwards — see
     # https://click.palletsprojects.com/en/stable/api/#click.Context.call_on_close
     ctx.call_on_close(lambda: _on_close(ctx))
+
+    if ctx.invoked_subcommand is None:
+        # Dispatch to the find picker with the recent-only cap. Setting
+        # invoked_subcommand makes `_on_close` run the auto-commit +
+        # usage-log path with subject "find" (instead of bailing out for
+        # a no-subcommand call).
+        from om.commands import find as find_cmd
+
+        ctx.invoked_subcommand = "find"
+        ctx.invoke(find_cmd.command, limit=find_cmd.BARE_LIMIT, config_dir=None)
 
 
 def _on_close(ctx: click.Context) -> None:
