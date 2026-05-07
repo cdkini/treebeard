@@ -4,8 +4,9 @@
 
 ## Setup
 
-Requires [uv](https://docs.astral.sh/uv/), Python 3.12+, and [`fzf`](https://github.com/junegunn/fzf)
-(`brew install fzf`). [`bat`](https://github.com/sharkdp/bat) is optional —
+Requires [uv](https://docs.astral.sh/uv/), Python 3.12+, [`fzf`](https://github.com/junegunn/fzf)
+(`brew install fzf`), and [`ripgrep`](https://github.com/BurntSushi/ripgrep)
+(`brew install ripgrep`, used by `om grep`). [`bat`](https://github.com/sharkdp/bat) is optional —
 the picker uses it for syntax-highlighted previews when present, falling
 back to `cat`.
 
@@ -22,10 +23,14 @@ Ctrl-N creates a new note named after whatever you've typed.
 `om find` is the same picker without the recent-only cap — it lists
 every note in the vault. Pass `--limit N` to cap.
 
+`om grep` runs ripgrep through fzf — type to search note contents,
+Enter opens the matched note at the matched line.
+
 ```bash
 om                # picker (last 20)
 om find           # picker (all notes)
 om find --limit 5 # picker (last 5)
+om grep           # fuzzy-search note contents
 om help           # show all subcommands
 om note foo       # create or open foo.md
 om daily          # today's daily note

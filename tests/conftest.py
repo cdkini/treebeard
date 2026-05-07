@@ -87,7 +87,8 @@ def fake_editor(monkeypatch: pytest.MonkeyPatch) -> list[EditorFake]:
     """
     queue: list[EditorFake] = []
 
-    def fake_run_editor(editor: str, path: pathlib.Path) -> None:
+    def fake_run_editor(editor: str, path: pathlib.Path, *, start_line: int | None = None) -> None:
+        del start_line
         if queue:
             queue.pop(0)(editor, path)
 

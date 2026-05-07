@@ -27,13 +27,16 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
-def run_editor(editor: str, path: pathlib.Path) -> None:
+def run_editor(editor: str, path: pathlib.Path, *, start_line: int | None = None) -> None:
     """Run `editor + path`. Raises `ClickException` on non-zero exit.
 
-    The bare `+` arg lands vim/nvim's cursor at the last line of the file.
+    The bare `+` arg lands vim/nvim's cursor at the last line of the file;
+    `+<N>` lands it at line N. Pass `start_line` from grep-style callers
+    that already know which line is interesting.
     """
+    line_arg = f"+{start_line}" if start_line is not None else "+"
     try:
-        subprocess.run([editor, "+", str(path)], check=True)
+        subprocess.run([editor, line_arg, str(path)], check=True)
     except subprocess.CalledProcessError as exc:
         raise click.ClickException(f"editor exited with status {exc.returncode}") from exc
 
@@ -120,7 +123,7 @@ def edit_with_initial(
     return final_path
 
 
-def reopen(path: pathlib.Path, editor: str) -> pathlib.Path:
+def reopen(path: pathlib.Path, editor: str, *, start_line: int | None = None) -> pathlib.Path:
     """Reopen an existing note. Bumps `updated_at` only if the user
     actually changed the file during the edit, then reconciles the
     filename against the title.
@@ -130,7 +133,7 @@ def reopen(path: pathlib.Path, editor: str) -> pathlib.Path:
     mtime_before = path.stat().st_mtime_ns
     final_path = path
     with edit_atomically(path) as aborted:
-        run_editor(editor, path)
+        run_editor(editor, path, start_line=start_line)
         mtime_after = path.stat().st_mtime_ns
         if mtime_after != mtime_before:
             contents = path.read_text(encoding="utf-8")
