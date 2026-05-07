@@ -75,9 +75,14 @@ def test_list_recent_notes_empty_vault(tmp_path: pathlib.Path) -> None:
     assert list_recent_notes(tmp_path) == []
 
 
-def test_list_recent_notes_includes_nested(tmp_path: pathlib.Path) -> None:
+def test_list_recent_notes_skips_subdirs(tmp_path: pathlib.Path) -> None:
+    """Vaults are flat. Markdown files in subdirectories — including
+    tooling dirs like `.claude/` (where `om chat`'s project memory
+    lives) — are not user notes and must not appear in `om find`."""
     nested = _touch(tmp_path, "subdir/inner.md")
+    claude_md = _touch(tmp_path, ".claude/CLAUDE.md")
     flat = _touch(tmp_path, "flat.md")
     _set_mtime(flat, 60)
     _set_mtime(nested, 0)
-    assert list_recent_notes(tmp_path) == [nested, flat]
+    _set_mtime(claude_md, 0)
+    assert list_recent_notes(tmp_path) == [flat]

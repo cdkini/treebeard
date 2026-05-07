@@ -12,7 +12,7 @@ import click
 from rich.panel import Panel
 from rich.text import Text
 
-from om import dependencies, git, ui
+from om import dependencies, git, scaffold, ui
 from om.config import (
     CONFIG_FILENAME,
     DEFAULT_CHAT_MODEL,
@@ -117,7 +117,23 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
     previewer = _prompt_previewer()
     chat_model = _prompt_chat_model()
 
-    adopted = (vault_path / ".om").is_dir() and (vault_path / ".git").is_dir()
+    config = Config(
+        vault=vault_path,
+        editor=editor,
+        previewer=previewer,
+        chat_model=chat_model,
+    )
+
+    # A valid om vault has both `.om/` and `.git/`. If the user pointed
+    # at one, it's already fully scaffolded (typically a clone of a
+    # vault from another machine) — leave the directory alone and just
+    # record where it lives in `~/.om/config.toml`.
+    if (vault_path / ".om").is_dir() and (vault_path / ".git").is_dir():
+        config_path = config.save(config_dir)
+        status_console.print()
+        ui.success(f"Adopted existing vault at {vault_path}")
+        ui.success(f"Wrote config to {config_path}")
+        return
 
     vault_path.mkdir(parents=True, exist_ok=True)
     (vault_path / ".om").mkdir(exist_ok=True)
@@ -128,30 +144,18 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
     if not git.has_remote(vault_path):
         _maybe_add_remote(vault_path)
 
-    config = Config(
-        vault=vault_path,
-        editor=editor,
-        previewer=previewer,
-        chat_model=chat_model,
-    )
+    claude_md_path = vault_path / ".claude" / "CLAUDE.md"
+    claude_md_path.parent.mkdir(parents=True, exist_ok=True)
+    claude_md_path.write_text(scaffold.compose_claude_md(), encoding="utf-8")
+
     config_path = config.save(config_dir)
 
-    # Guarantee the repo has a HEAD so downstream commands (sync, the
-    # auto-commit hook, etc.) don't trip on a commitless repo. Skip when
-    # adopting a vault that already has commits — don't pollute history.
-    if not git.has_head(vault_path):
-        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        message = f"init: {ts}"
-        if git.has_changes(vault_path):
-            git.commit_all(vault_path, message)
-        else:
-            git.commit_all_allow_empty(vault_path, message)
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    git.commit_all(vault_path, f"init: {ts}")
 
     status_console.print()
-    if adopted:
-        ui.success(f"Adopted existing vault at {vault_path}")
-    else:
-        ui.success(f"Initialized vault at {vault_path}")
+    ui.success(f"Initialized vault at {vault_path}")
+    ui.success(f"Scaffolded {claude_md_path}")
     ui.success(f"Wrote config to {config_path}")
 
 
@@ -263,6 +267,26 @@ def _ensure_git_identity(vault: pathlib.Path) -> None:
         show_default=name_default is not None,
     )
     git.set_config(vault, "user.name", name)
+
+
+def _ensure_claude_md(vault: pathlib.Path) -> str:
+    """Scaffold `<vault>/.claude/CLAUDE.md` for `om chat`'s project memory.
+
+    The Claude Agent SDK auto-loads this file via
+    `setting_sources=["project"]`. Writing it under `.claude/` (vs. the
+    vault root) keeps it out of `om grep` (ripgrep skips dotdirs) and,
+    once `vault.list_recent_notes` prunes dotdirs, out of `om find` too.
+
+    Skips silently when the file already exists — typical for adoption
+    of a vault the user has already curated. Returns the status line
+    the caller surfaces via `ui.success`.
+    """
+    target = vault / ".claude" / "CLAUDE.md"
+    if target.exists():
+        return f"CLAUDE.md already present at {target} — keeping yours"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(scaffold.compose_claude_md(), encoding="utf-8")
+    return f"Scaffolded {target}"
 
 
 def _maybe_add_remote(vault: pathlib.Path) -> None:

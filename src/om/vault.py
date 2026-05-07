@@ -33,12 +33,15 @@ def find_prior_daily(vault: pathlib.Path, today: date) -> tuple[pathlib.Path, da
 
 
 def list_recent_notes(vault: pathlib.Path, limit: int | None = 10) -> list[pathlib.Path]:
-    """Return markdown files in the vault, mtime desc, optionally capped.
+    """Return markdown files at the vault root, mtime desc, optionally capped.
 
-    `.om/` and `.git/` don't contain `.md` files, so a plain rglob is
-    enough — no exclude list needed. `limit=None` returns every note.
+    Vaults are flat — every user note lives at the root. A
+    non-recursive glob skips tooling dirs (`.om/`, `.git/`, `.claude/`)
+    for free; the alternative `rglob` would surface
+    `.claude/CLAUDE.md` (`om chat`'s project memory) in `om find`.
+    `limit=None` returns every note.
     """
-    entries = [(entry.stat().st_mtime, entry) for entry in vault.rglob("*.md")]
+    entries = [(entry.stat().st_mtime, entry) for entry in vault.glob("*.md")]
     entries.sort(key=lambda item: item[0], reverse=True)
     paths = [path for _, path in entries]
     return paths if limit is None else paths[:limit]

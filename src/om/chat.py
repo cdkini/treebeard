@@ -20,6 +20,7 @@ import asyncio
 import json
 import pathlib
 from datetime import UTC, datetime
+from importlib import resources
 from typing import Any
 
 from claude_agent_sdk import (
@@ -52,16 +53,12 @@ ALLOWED_TOOLS = ("Read", "Glob", "Grep", "WebFetch", "WebSearch")
 # agent persona — that's why Claude was trying to call MCP servers and
 # emitting agent-style responses. Replace it with a focused assistant
 # that knows it has read-only access to the user's notes vault.
+#
+# Loaded from `om/prompts/system_prompt.txt` so edits don't require
+# touching Python. Read once at import; the file is a package-shipped
+# constant.
 SYSTEM_PROMPT = (
-    "You are a helpful assistant embedded in the user's notes vault. "
-    "The current working directory is the vault root. You have read-only "
-    "access via the Read, Glob, and Grep tools — use them when the user "
-    "asks about their notes, files, or anything in the vault. You also "
-    "have WebFetch and WebSearch for looking things up online. You do "
-    "NOT have Bash, Write, or Edit — you cannot run shell commands or "
-    "modify the vault. Respond conversationally and concisely. If the "
-    "vault contains a CLAUDE.md at the root, treat it as authoritative "
-    "context about the user and their notes."
+    resources.files("om").joinpath("prompts/system_prompt.txt").read_text(encoding="utf-8").strip()
 )
 
 # Glyph for the user-input prompt — matches `om init`'s aesthetic.
