@@ -12,6 +12,7 @@ from click.testing import CliRunner
 
 from om.cli import cli
 from om.commands import note as note_cmd
+from om.config import Config
 
 FROZEN_NOW = datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC)
 FROZEN_LATER = datetime(2026, 5, 7, 15, 0, 0, tzinfo=UTC)
@@ -25,11 +26,15 @@ def vault(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def cfg_dir(tmp_path: Path, vault: Path) -> Path:
+def cfg_dir(tmp_path: Path) -> Path:
     d = tmp_path / "cfg"
     d.mkdir()
-    (d / "config.toml").write_text(f'vault = "{vault}"\n', encoding="utf-8")
     return d
+
+
+def _write_cfg(cfg_dir: Path, vault: Path, editor: str) -> None:
+    """Pre-seed `cfg_dir/config.toml` via the Config dataclass."""
+    Config(vault=vault, editor=editor).save(str(cfg_dir))
 
 
 @pytest.fixture
@@ -45,9 +50,14 @@ def freeze_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
 
 
 def _make_script(tmp_path: Path, body: str, name: str = "edit.sh") -> Path:
-    """Write an executable shell script that runs `body` with $1 == file path."""
+    """Write an executable shell script that runs `body` with $1 == file path.
+
+    Skips any leading `+...` arg so the script can stand in for vim/nvim,
+    which `om` invokes as `vim + <path>` to land the cursor at EOF.
+    """
     script = tmp_path / name
-    script.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    preamble = 'while [ "${1#+}" != "$1" ]; do shift; done\n'
+    script.write_text(f"#!/bin/sh\n{preamble}{body}\n", encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return script
 
@@ -82,11 +92,8 @@ def test_creates_named_file_with_frontmatter(
 ) -> None:
     del freeze_now
     script = _appender(tmp_path)
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "hello"],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
     assert result.exit_code == 0, result.output
     path = vault / "hello.md"
     assert path.exists()
@@ -100,8 +107,9 @@ def test_creates_named_file_with_frontmatter(
         "tags: []\n"
         "---\n"
     )
-    # The template has a trailing blank line so the cursor lands at body.
-    assert text == expected_frontmatter + "\nedited\n"
+    # The template has two trailing blank lines so the cursor (passed `+`)
+    # lands at the second blank line below the frontmatter.
+    assert text == expected_frontmatter + "\n\nedited\n"
     assert str(path) in result.output
 
 
@@ -109,11 +117,8 @@ def test_named_discards_when_unchanged(
     runner: CliRunner, cfg_dir: Path, vault: Path, freeze_now: list[datetime]
 ) -> None:
     del freeze_now
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "hello"],
-        env={"EDITOR": "true"},
-    )
+    _write_cfg(cfg_dir, vault, "true")
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
     assert result.exit_code == 0, result.output
     assert not (vault / "hello.md").exists()
     assert "discarded empty note" in result.output
@@ -123,11 +128,8 @@ def test_named_discards_on_editor_failure(
     runner: CliRunner, cfg_dir: Path, vault: Path, freeze_now: list[datetime]
 ) -> None:
     del freeze_now
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "hello"],
-        env={"EDITOR": "false"},
-    )
+    _write_cfg(cfg_dir, vault, "false")
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
     assert result.exit_code != 0
     assert not (vault / "hello.md").exists()
 
@@ -141,11 +143,8 @@ def test_slugifies_name(
 ) -> None:
     del freeze_now
     script = _appender(tmp_path)
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "Sprint Planning!"],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "Sprint Planning!"])
     assert result.exit_code == 0, result.output
     path = vault / "sprint-planning.md"
     assert path.exists()
@@ -161,15 +160,15 @@ def test_strips_md_extension(
 ) -> None:
     del freeze_now
     script = _appender(tmp_path)
-    r1 = runner.invoke(
-        cli, ["note", "--config-dir", str(cfg_dir), "foo.md"], env={"EDITOR": str(script)}
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    r1 = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "foo.md"])
     assert r1.exit_code == 0, r1.output
     path = vault / "foo.md"
     assert path.exists()
     assert "title: foo\n" in path.read_text(encoding="utf-8")
     # Re-running with the bare name reopens the same file.
-    r2 = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "foo"], env={"EDITOR": "true"})
+    _write_cfg(cfg_dir, vault, "true")
+    r2 = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "foo"])
     assert r2.exit_code == 0, r2.output
     assert sorted(p.name for p in vault.glob("*.md")) == ["foo.md"]
 
@@ -183,11 +182,8 @@ def test_unnamed_falls_back_to_timestamp_when_title_left_empty(
 ) -> None:
     del freeze_now
     script = _appender(tmp_path, payload="just a body\n")
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir)],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     path = vault / "scratch-2026-05-07t14-23-05.md"
     assert path.exists()
@@ -208,11 +204,8 @@ def test_unnamed_uses_edited_title_for_filename(
 ) -> None:
     del freeze_now
     script = _title_setter(tmp_path, "My Great Idea")
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir)],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     path = vault / "my-great-idea.md"
     assert path.exists()
@@ -225,11 +218,8 @@ def test_unnamed_discards_when_unchanged(
     runner: CliRunner, cfg_dir: Path, vault: Path, freeze_now: list[datetime]
 ) -> None:
     del freeze_now
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir)],
-        env={"EDITOR": "true"},
-    )
+    _write_cfg(cfg_dir, vault, "true")
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     assert "discarded empty note" in result.output
     drafts = vault / ".om" / "drafts"
@@ -247,12 +237,8 @@ def test_unnamed_collision_keeps_draft(
     del freeze_now
     (vault / "todo.md").write_text("pre-existing\n", encoding="utf-8")
     script = _title_setter(tmp_path, "todo")
-
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir)],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
     assert result.exit_code != 0
     assert "already exists" in result.output
     assert "draft kept at" in result.output
@@ -281,11 +267,8 @@ def test_reopen_does_not_clobber_when_unchanged(
     )
     path.write_text(original, encoding="utf-8")
 
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "todo"],
-        env={"EDITOR": "true"},
-    )
+    _write_cfg(cfg_dir, vault, "true")
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "todo"])
     assert result.exit_code == 0, result.output
     assert path.read_text(encoding="utf-8") == original
 
@@ -317,11 +300,8 @@ def test_reopen_bumps_updated_at_when_mtime_moves(
     os.utime(path, (old, old))
 
     script = _appender(tmp_path)
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "todo"],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "todo"])
     assert result.exit_code == 0, result.output
     text = path.read_text(encoding="utf-8")
     assert "created_at: 2020-01-01T00:00:00Z\n" in text
@@ -344,11 +324,8 @@ def test_reopen_with_malformed_frontmatter_is_noop(
     os.utime(path, (old, old))
 
     script = _appender(tmp_path, payload="more\n")
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "raw"],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "raw"])
     assert result.exit_code == 0, result.output
     assert path.read_text(encoding="utf-8") == "just a body, no frontmatter\nmore\n"
 
@@ -356,36 +333,17 @@ def test_reopen_with_malformed_frontmatter_is_noop(
 def test_errors_when_no_vault_configured(runner: CliRunner, tmp_path: Path) -> None:
     empty_cfg = tmp_path / "empty"
     empty_cfg.mkdir()
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(empty_cfg), "hi"],
-        env={"EDITOR": "true"},
-    )
+    result = runner.invoke(cli, ["note", "--config-dir", str(empty_cfg), "hi"])
     assert result.exit_code != 0
     assert "no vault configured" in result.output
 
 
-def test_errors_when_editor_has_spaces(
+def test_errors_on_empty_slug(
     runner: CliRunner, cfg_dir: Path, vault: Path, freeze_now: list[datetime]
 ) -> None:
     del freeze_now
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "x"],
-        env={"EDITOR": "code --wait"},
-    )
-    assert result.exit_code != 0
-    assert "EDITOR must be a single executable" in result.output
-    assert not (vault / "x.md").exists()
-
-
-def test_errors_on_empty_slug(runner: CliRunner, cfg_dir: Path, freeze_now: list[datetime]) -> None:
-    del freeze_now
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "!!!"],
-        env={"EDITOR": "true"},
-    )
+    _write_cfg(cfg_dir, vault, "true")
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "!!!"])
     assert result.exit_code != 0
     assert "empty slug" in result.output
 
@@ -404,11 +362,8 @@ def test_named_keeps_tags_when_user_adds_them(
         '"$1" > "$tmp" && mv "$tmp" "$1"\n'
     )
     script = _make_script(tmp_path, body, name="add_tags.sh")
-    result = runner.invoke(
-        cli,
-        ["note", "--config-dir", str(cfg_dir), "hello"],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
     assert result.exit_code == 0, result.output
     text = (vault / "hello.md").read_text(encoding="utf-8")
     assert "tags: [foo, bar]\n" in text

@@ -1,21 +1,42 @@
-"""Shared config-file helpers for `om`.
+"""Shared config helpers for `om`.
 
 The CLI persists a small TOML config at `<config_dir>/config.toml`,
-where `<config_dir>` defaults to `~/.om`. Today the only key is `vault`,
-the absolute path to the user's vault.
+where `<config_dir>` defaults to `~/.om`. Two keys are recognized:
+`vault` (absolute path to the user's vault) and `editor` (executable
+to launch for editing notes; `om init` prompts for one of `vim`,
+`nvim`).
 """
 
 from __future__ import annotations
 
 import os
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import click
 
 DEFAULT_CONFIG_DIR = "~/.om"
 CONFIG_FILENAME = "config.toml"
+VALID_EDITORS = ("nvim", "vim")
+DEFAULT_EDITOR = "vim"
+
+
+@dataclass(frozen=True)
+class Config:
+    vault: Path
+    editor: str
+
+    def to_toml(self) -> str:
+        return _toml_lines({"vault": str(self.vault), "editor": self.editor})
+
+    def save(self, config_dir: str | None) -> Path:
+        """Write `self` to `<config_dir>/config.toml`, creating the
+        directory if needed. Returns the file path."""
+        path = config_path_for(config_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self.to_toml(), encoding="utf-8")
+        return path
 
 
 def resolve_user_path(raw: str) -> Path:
@@ -27,32 +48,54 @@ def config_path_for(config_dir: str | None) -> Path:
     return resolve_user_path(raw) / CONFIG_FILENAME
 
 
-def read_config(config_path: Path) -> dict[str, Any]:
+def _read_raw(config_path: Path) -> dict[str, object]:
     if not config_path.exists():
         return {}
     with config_path.open("rb") as fh:
         return dict(tomllib.load(fh))
 
 
-def write_config(config_path: Path, data: dict[str, Any]) -> None:
-    lines: list[str] = []
+def _toml_lines(data: dict[str, str]) -> str:
+    out: list[str] = []
     for key, value in data.items():
-        if not isinstance(value, str):
-            raise click.ClickException(
-                f"unsupported config value for {key!r}: only strings are supported"
-            )
         escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-        lines.append(f'{key} = "{escaped}"\n')
-    config_path.write_text("".join(lines), encoding="utf-8")
+        out.append(f'{key} = "{escaped}"\n')
+    return "".join(out)
+
+
+def is_initialized(config_dir: str | None) -> bool:
+    """True if a config file already records a vault or editor.
+    `om init` uses this to refuse to overwrite an existing setup."""
+    raw = _read_raw(config_path_for(config_dir))
+    return "vault" in raw or "editor" in raw
+
+
+def load_config(config_dir: str | None) -> Config:
+    """Read the config file. Raises `click.ClickException` if no vault
+    is configured or the configured vault is missing. Defaults the
+    editor to `vim` when the field is absent."""
+    raw = _read_raw(config_path_for(config_dir))
+    vault_raw = raw.get("vault")
+    if not isinstance(vault_raw, str) or not vault_raw:
+        raise click.ClickException("no vault configured; run `om init` first")
+    vault = Path(vault_raw)
+    if not vault.is_dir():
+        raise click.ClickException(f"configured vault {vault} does not exist")
+    editor = raw.get("editor")
+    if not isinstance(editor, str) or not editor:
+        editor = DEFAULT_EDITOR
+    return Config(vault=vault, editor=editor)
 
 
 def load_vault_path(config_dir: str | None) -> Path | None:
-    """Return the configured vault path, or None if unset/unreadable."""
+    """Best-effort vault lookup for callers that need only the path
+    (e.g. usage logging). Returns None on any read failure so callers
+    can no-op silently."""
     try:
-        cfg = read_config(config_path_for(config_dir))
+        raw = _read_raw(config_path_for(config_dir))
     except Exception:
         return None
-    vault = cfg.get("vault")
+    vault = raw.get("vault")
     if not isinstance(vault, str) or not vault:
         return None
     return Path(vault)

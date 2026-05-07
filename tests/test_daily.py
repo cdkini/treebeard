@@ -13,6 +13,7 @@ from click.testing import CliRunner
 from om.cli import cli
 from om.commands import daily as daily_cmd
 from om.commands import note as note_cmd
+from om.config import Config
 
 FROZEN_NOW = datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC)
 FROZEN_LATER = datetime(2026, 5, 7, 15, 0, 0, tzinfo=UTC)
@@ -27,11 +28,14 @@ def vault(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def cfg_dir(tmp_path: Path, vault: Path) -> Path:
+def cfg_dir(tmp_path: Path) -> Path:
     d = tmp_path / "cfg"
     d.mkdir()
-    (d / "config.toml").write_text(f'vault = "{vault}"\n', encoding="utf-8")
     return d
+
+
+def _write_cfg(cfg_dir: Path, vault: Path, editor: str) -> None:
+    Config(vault=vault, editor=editor).save(str(cfg_dir))
 
 
 @pytest.fixture
@@ -50,7 +54,10 @@ def freeze_clock(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
 
 def _make_script(tmp_path: Path, body: str, name: str = "edit.sh") -> Path:
     script = tmp_path / name
-    script.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    # Skip any leading `+...` arg so the script can stand in for vim/nvim,
+    # which `om` invokes as `vim + <path>` to land the cursor at EOF.
+    preamble = 'while [ "${1#+}" != "$1" ]; do shift; done\n'
+    script.write_text(f"#!/bin/sh\n{preamble}{body}\n", encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return script
 
@@ -74,11 +81,8 @@ def test_creates_todays_file_with_daily_tag(
 ) -> None:
     del freeze_clock
     script = _appender(tmp_path)
-    result = runner.invoke(
-        cli,
-        ["daily", "--config-dir", str(cfg_dir)],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     path = vault / "2026-05-07.md"
     assert path.exists()
@@ -92,7 +96,7 @@ def test_creates_todays_file_with_daily_tag(
         "tags: [daily]\n"
         "---\n"
     )
-    assert text == expected_frontmatter + "\nedited\n"
+    assert text == expected_frontmatter + "\n\nedited\n"
     assert str(path) in result.output
 
 
@@ -100,11 +104,8 @@ def test_discards_when_unchanged(
     runner: CliRunner, cfg_dir: Path, vault: Path, freeze_clock: list[datetime]
 ) -> None:
     del freeze_clock
-    result = runner.invoke(
-        cli,
-        ["daily", "--config-dir", str(cfg_dir)],
-        env={"EDITOR": "true"},
-    )
+    _write_cfg(cfg_dir, vault, "true")
+    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     assert not (vault / "2026-05-07.md").exists()
     assert "discarded empty note" in result.output
@@ -142,11 +143,8 @@ def test_reopens_existing_daily_note_preserving_tags(
     os.utime(path, (old, old))
 
     script = _appender(tmp_path, payload="more\n")
-    result = runner.invoke(
-        cli,
-        ["daily", "--config-dir", str(cfg_dir)],
-        env={"EDITOR": str(script)},
-    )
+    _write_cfg(cfg_dir, vault, str(script))
+    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     text = path.read_text(encoding="utf-8")
     assert "tags: [daily, journal]\n" in text
@@ -161,10 +159,6 @@ def test_errors_when_no_vault_configured(
     del freeze_clock
     empty_cfg = tmp_path / "empty"
     empty_cfg.mkdir()
-    result = runner.invoke(
-        cli,
-        ["daily", "--config-dir", str(empty_cfg)],
-        env={"EDITOR": "true"},
-    )
+    result = runner.invoke(cli, ["daily", "--config-dir", str(empty_cfg)])
     assert result.exit_code != 0
     assert "no vault configured" in result.output

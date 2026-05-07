@@ -15,7 +15,7 @@ import click
 from om.config import (
     CONFIG_FILENAME,
     DEFAULT_CONFIG_DIR,
-    load_vault_path,
+    load_config,
 )
 from om.frontmatter import Frontmatter, split_document
 
@@ -39,18 +39,10 @@ def _slugify(name: str) -> str:
     return slug
 
 
-def _resolve_editor() -> str:
-    raw = os.environ.get("EDITOR", "").strip()
-    if not raw:
-        return "vi"
-    if any(ch.isspace() for ch in raw):
-        raise click.ClickException(f"EDITOR must be a single executable; got {raw!r}")
-    return raw
-
-
 def _run_editor(editor: str, path: Path) -> None:
+    # `+` (no number) tells vim/nvim to open at the last line of the file.
     try:
-        subprocess.run([editor, str(path)], check=True)
+        subprocess.run([editor, "+", str(path)], check=True)
     except subprocess.CalledProcessError as exc:
         raise click.ClickException(f"editor exited with status {exc.returncode}") from exc
 
@@ -66,24 +58,19 @@ def _run_editor(editor: str, path: Path) -> None:
 )
 @click.pass_context
 def command(ctx: click.Context, name: str | None, config_dir: str | None) -> None:
-    """Create or open a markdown note in the vault and edit it with $EDITOR."""
+    """Create or open a markdown note in the vault and edit it with the configured editor."""
     ctx.ensure_object(dict)["config_dir"] = config_dir
-    vault = load_vault_path(config_dir)
-    if vault is None:
-        raise click.ClickException("no vault configured; run `om init` first")
-    if not vault.is_dir():
-        raise click.ClickException(f"configured vault {vault} does not exist")
+    cfg = load_config(config_dir)
 
-    editor = _resolve_editor()
     now = _now_utc()
 
     if name is None:
-        _create_unnamed(vault, now, editor)
+        _create_unnamed(cfg.vault, now, cfg.editor)
         return
 
     slug = _slugify(name)
     stripped = name[:-3] if name.endswith(".md") else name
-    create_or_open_named(vault, slug, stripped, now, editor)
+    create_or_open_named(cfg.vault, slug, stripped, now, cfg.editor)
 
 
 def create_or_open_named(
@@ -95,7 +82,7 @@ def create_or_open_named(
     *,
     tags: list[str] | None = None,
 ) -> None:
-    """Create `vault/{slug}.md` with frontmatter and open `$EDITOR`,
+    """Create `vault/{slug}.md` with frontmatter and open the editor,
     or reopen it if it already exists."""
     path = vault / f"{slug}.md"
     if not path.exists():
@@ -115,7 +102,7 @@ def _create_named(
     fm = Frontmatter.new(title, now)
     if tags:
         fm.tags = list(tags)
-    initial = fm.serialize() + "\n"
+    initial = fm.serialize() + "\n\n"
     path.write_text(initial, encoding="utf-8")
     try:
         _run_editor(editor, path)
@@ -137,7 +124,7 @@ def _create_unnamed(vault: Path, now: datetime, editor: str) -> None:
     drafts_dir = vault / DRAFTS_DIRNAME
     drafts_dir.mkdir(parents=True, exist_ok=True)
 
-    initial = Frontmatter.new("", now).serialize() + "\n"
+    initial = Frontmatter.new("", now).serialize() + "\n\n"
     fd, raw_path = tempfile.mkstemp(suffix=".md", dir=str(drafts_dir))
     draft = Path(raw_path)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:

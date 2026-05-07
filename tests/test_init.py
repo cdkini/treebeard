@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import tomllib
 from pathlib import Path
 
@@ -16,11 +17,22 @@ def _read_toml(path: Path) -> dict[str, object]:
         return dict(tomllib.load(fh))
 
 
+@pytest.fixture(autouse=True)
+def _stable_editor_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin `shutil.which` so the editor prompt's default doesn't depend
+    on what's installed on the host running the tests."""
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+
+
 def test_happy_path(runner: CliRunner, tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), str(vault)])
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input=f"{vault}\nvim\n",
+    )
 
     assert result.exit_code == 0, result.output
     assert (vault / ".om").is_dir()
@@ -28,85 +40,89 @@ def test_happy_path(runner: CliRunner, tmp_path: Path) -> None:
     assert f"Wrote config to {cfg_dir / 'config.toml'}" in result.output
 
     data = _read_toml(cfg_dir / "config.toml")
-    assert data == {"vault": str(vault)}
+    assert data == {"vault": str(vault), "editor": "vim"}
 
 
-def test_errors_when_target_is_existing_file(runner: CliRunner, tmp_path: Path) -> None:
+def test_persists_chosen_editor(runner: CliRunner, tmp_path: Path) -> None:
     vault = tmp_path / "vault"
-    vault.write_text("hi")
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), str(vault)])
-
-    assert result.exit_code != 0
-    assert "already exists" in result.output
-    assert not (cfg_dir / "config.toml").exists()
-
-
-def test_errors_when_target_is_nonempty_dir(runner: CliRunner, tmp_path: Path) -> None:
-    vault = tmp_path / "vault"
-    vault.mkdir()
-    (vault / "stuff.txt").write_text("hi")
-    cfg_dir = tmp_path / "cfg"
-
-    result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), str(vault)])
-
-    assert result.exit_code != 0
-    assert "already exists" in result.output
-    assert not (cfg_dir / "config.toml").exists()
-
-
-def test_errors_when_target_is_empty_dir(runner: CliRunner, tmp_path: Path) -> None:
-    vault = tmp_path / "vault"
-    vault.mkdir()
-    cfg_dir = tmp_path / "cfg"
-
-    result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), str(vault)])
-
-    assert result.exit_code != 0
-    assert "already exists" in result.output
-    assert not (cfg_dir / "config.toml").exists()
-
-
-def test_errors_when_parent_missing(runner: CliRunner, tmp_path: Path) -> None:
-    vault = tmp_path / "no" / "such" / "parent" / "vault"
-    cfg_dir = tmp_path / "cfg"
-
-    result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), str(vault)])
-
-    assert result.exit_code != 0
-    assert "parent directory" in result.output
-    assert "does not exist" in result.output
-
-
-def test_reinit_errors_when_vault_already_set(runner: CliRunner, tmp_path: Path) -> None:
-    cfg_dir = tmp_path / "cfg"
-    cfg_dir.mkdir()
-    cfg_path = cfg_dir / "config.toml"
-    cfg_path.write_text('vault = "/some/old/place"\n')
-
-    vault = tmp_path / "vault"
-    result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), str(vault)])
-
-    assert result.exit_code != 0
-    assert "already has a vault configured" in result.output
-    assert not vault.exists()
-    # Original config untouched.
-    assert cfg_path.read_text() == 'vault = "/some/old/place"\n'
-
-
-def test_reinit_succeeds_when_other_keys_present(runner: CliRunner, tmp_path: Path) -> None:
-    cfg_dir = tmp_path / "cfg"
-    cfg_dir.mkdir()
-    cfg_path = cfg_dir / "config.toml"
-    cfg_path.write_text('theme = "dark"\n')
-
-    vault = tmp_path / "vault"
-    result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), str(vault)])
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input=f"{vault}\nnvim\n",
+    )
 
     assert result.exit_code == 0, result.output
-    data = _read_toml(cfg_path)
-    assert data == {"theme": "dark", "vault": str(vault)}
+    data = _read_toml(cfg_dir / "config.toml")
+    assert data["editor"] == "nvim"
+
+
+def test_reprompts_when_path_already_exists(runner: CliRunner, tmp_path: Path) -> None:
+    taken = tmp_path / "taken"
+    taken.mkdir()
+    good = tmp_path / "good"
+    cfg_dir = tmp_path / "cfg"
+
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input=f"{taken}\n{good}\nvim\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"{taken} already exists" in result.output
+    assert (good / ".om").is_dir()
+
+
+def test_reprompts_when_parent_missing(runner: CliRunner, tmp_path: Path) -> None:
+    bad = tmp_path / "no" / "such" / "parent" / "vault"
+    good = tmp_path / "good"
+    cfg_dir = tmp_path / "cfg"
+
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input=f"{bad}\n{good}\nvim\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "does not exist" in result.output
+    assert (good / ".om").is_dir()
+
+
+def test_rejects_invalid_editor_then_accepts(runner: CliRunner, tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    cfg_dir = tmp_path / "cfg"
+
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input=f"{vault}\nemacs\nvim\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    data = _read_toml(cfg_dir / "config.toml")
+    assert data["editor"] == "vim"
+
+
+def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: Path) -> None:
+    cfg_dir = tmp_path / "cfg"
+    cfg_dir.mkdir()
+    cfg_path = cfg_dir / "config.toml"
+    cfg_path.write_text('vault = "/some/old/place"\neditor = "vim"\n', encoding="utf-8")
+
+    vault = tmp_path / "vault"
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input=f"{vault}\nvim\n",
+    )
+
+    assert result.exit_code != 0
+    assert "already configured" in result.output
+    assert not vault.exists()
+    assert cfg_path.read_text() == 'vault = "/some/old/place"\neditor = "vim"\n'
 
 
 def test_tilde_expansion_uses_home_env(
@@ -117,12 +133,16 @@ def test_tilde_expansion_uses_home_env(
     monkeypatch.setenv("HOME", str(fake_home))
 
     cfg_dir = tmp_path / "cfg"
-    result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), "~/vault"])
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input="~/vault\nvim\n",
+    )
 
     assert result.exit_code == 0, result.output
     assert (fake_home / "vault" / ".om").is_dir()
     data = _read_toml(cfg_dir / "config.toml")
-    assert data == {"vault": str(fake_home / "vault")}
+    assert data == {"vault": str(fake_home / "vault"), "editor": "vim"}
 
 
 def test_relative_path_is_stored_absolute(
@@ -131,7 +151,11 @@ def test_relative_path_is_stored_absolute(
     monkeypatch.chdir(tmp_path)
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", "--config-dir", str(cfg_dir), "vault"])
+    result = runner.invoke(
+        cli,
+        ["init", "--config-dir", str(cfg_dir)],
+        input="vault\nvim\n",
+    )
 
     assert result.exit_code == 0, result.output
     data = _read_toml(cfg_dir / "config.toml")
