@@ -6,10 +6,10 @@ file with frontmatter. Keeps the per-command modules thin.
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
 
 import click
 
@@ -20,7 +20,7 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
-def run_editor(editor: str, path: Path) -> None:
+def run_editor(editor: str, path: pathlib.Path) -> None:
     """Run `editor + path`. Raises `ClickException` on non-zero exit.
 
     The bare `+` arg lands vim/nvim's cursor at the last line of the file.
@@ -31,7 +31,7 @@ def run_editor(editor: str, path: Path) -> None:
         raise click.ClickException(f"editor exited with status {exc.returncode}") from exc
 
 
-def rewrite_with(path: Path, contents: str, mutate: Callable[[Frontmatter], None]) -> None:
+def rewrite_with(path: pathlib.Path, contents: str, mutate: Callable[[Frontmatter], None]) -> None:
     """Re-serialize the frontmatter after applying `mutate(fm)`.
 
     No-op if the file lacks a parseable frontmatter block — we don't
@@ -46,7 +46,7 @@ def rewrite_with(path: Path, contents: str, mutate: Callable[[Frontmatter], None
 
 
 def edit_with_initial(
-    path: Path,
+    path: pathlib.Path,
     initial: str,
     editor: str,
     *,
@@ -75,7 +75,7 @@ def edit_with_initial(
     click.echo(str(path))
 
 
-def reopen(path: Path, editor: str) -> None:
+def reopen(path: pathlib.Path, editor: str) -> None:
     """Reopen an existing note. Bumps `updated_at` only if the user
     actually changed the file during the edit."""
     mtime_before = path.stat().st_mtime_ns

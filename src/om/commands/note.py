@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import re
 import tempfile
 from datetime import UTC, datetime
-from pathlib import Path
 
 import click
 
@@ -65,7 +65,7 @@ def command(ctx: click.Context, name: str | None, config_dir: str | None) -> Non
 
 
 def create_or_open_named(
-    vault: Path,
+    vault: pathlib.Path,
     slug: str,
     title: str,
     now: datetime,
@@ -85,13 +85,13 @@ def create_or_open_named(
     reopen(path, editor)
 
 
-def _create_unnamed(vault: Path, now: datetime, editor: str) -> None:
+def _create_unnamed(vault: pathlib.Path, now: datetime, editor: str) -> None:
     drafts_dir = vault / DRAFTS_DIRNAME
     drafts_dir.mkdir(parents=True, exist_ok=True)
 
     initial = Frontmatter.new("", now).serialize() + "\n\n"
     fd, raw_path = tempfile.mkstemp(suffix=".md", dir=str(drafts_dir))
-    draft = Path(raw_path)
+    draft = pathlib.Path(raw_path)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(initial)
 

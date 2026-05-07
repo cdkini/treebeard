@@ -10,9 +10,9 @@ to launch for editing notes; `om init` prompts for one of `vim`,
 from __future__ import annotations
 
 import os
+import pathlib
 import tomllib
 from dataclasses import dataclass
-from pathlib import Path
 
 import click
 
@@ -24,13 +24,13 @@ DEFAULT_EDITOR = "vim"
 
 @dataclass(frozen=True)
 class Config:
-    vault: Path
+    vault: pathlib.Path
     editor: str
 
     def to_toml(self) -> str:
         return _toml_lines({"vault": str(self.vault), "editor": self.editor})
 
-    def save(self, config_dir: str | None) -> Path:
+    def save(self, config_dir: str | None) -> pathlib.Path:
         """Write `self` to `<config_dir>/config.toml`, creating the
         directory if needed. Returns the file path."""
         path = config_path_for(config_dir)
@@ -39,16 +39,16 @@ class Config:
         return path
 
 
-def resolve_user_path(raw: str) -> Path:
-    return Path(os.path.expandvars(raw)).expanduser().resolve()
+def resolve_user_path(raw: str) -> pathlib.Path:
+    return pathlib.Path(os.path.expandvars(raw)).expanduser().resolve()
 
 
-def config_path_for(config_dir: str | None) -> Path:
+def config_path_for(config_dir: str | None) -> pathlib.Path:
     raw = config_dir if config_dir is not None else DEFAULT_CONFIG_DIR
     return resolve_user_path(raw) / CONFIG_FILENAME
 
 
-def _read_raw(config_path: Path) -> dict[str, object]:
+def _read_raw(config_path: pathlib.Path) -> dict[str, object]:
     if not config_path.exists():
         return {}
     with config_path.open("rb") as fh:
@@ -78,7 +78,7 @@ def load_config(config_dir: str | None) -> Config:
     vault_raw = raw.get("vault")
     if not isinstance(vault_raw, str) or not vault_raw:
         raise click.ClickException("no vault configured; run `om init` first")
-    vault = Path(vault_raw)
+    vault = pathlib.Path(vault_raw)
     if not vault.is_dir():
         raise click.ClickException(f"configured vault {vault} does not exist")
     editor = raw.get("editor")
@@ -87,7 +87,7 @@ def load_config(config_dir: str | None) -> Config:
     return Config(vault=vault, editor=editor)
 
 
-def load_vault_path(config_dir: str | None) -> Path | None:
+def load_vault_path(config_dir: str | None) -> pathlib.Path | None:
     """Best-effort vault lookup for callers that need only the path
     (e.g. usage logging). Returns None on any read failure so callers
     can no-op silently."""
@@ -98,4 +98,4 @@ def load_vault_path(config_dir: str | None) -> Path | None:
     vault = raw.get("vault")
     if not isinstance(vault, str) or not vault:
         return None
-    return Path(vault)
+    return pathlib.Path(vault)

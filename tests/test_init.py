@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import pathlib
 import shutil
 import tomllib
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -12,7 +12,7 @@ from click.testing import CliRunner
 from om.cli import cli
 
 
-def _read_toml(path: Path) -> dict[str, object]:
+def _read_toml(path: pathlib.Path) -> dict[str, object]:
     with path.open("rb") as fh:
         return dict(tomllib.load(fh))
 
@@ -24,7 +24,7 @@ def _stable_editor_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
 
 
-def test_happy_path(runner: CliRunner, tmp_path: Path) -> None:
+def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     vault = tmp_path / "vault"
     cfg_dir = tmp_path / "cfg"
 
@@ -43,7 +43,7 @@ def test_happy_path(runner: CliRunner, tmp_path: Path) -> None:
     assert data == {"vault": str(vault), "editor": "vim"}
 
 
-def test_persists_chosen_editor(runner: CliRunner, tmp_path: Path) -> None:
+def test_persists_chosen_editor(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     vault = tmp_path / "vault"
     cfg_dir = tmp_path / "cfg"
 
@@ -58,7 +58,7 @@ def test_persists_chosen_editor(runner: CliRunner, tmp_path: Path) -> None:
     assert data["editor"] == "nvim"
 
 
-def test_reprompts_when_path_already_exists(runner: CliRunner, tmp_path: Path) -> None:
+def test_reprompts_when_path_already_exists(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     taken = tmp_path / "taken"
     taken.mkdir()
     good = tmp_path / "good"
@@ -75,7 +75,7 @@ def test_reprompts_when_path_already_exists(runner: CliRunner, tmp_path: Path) -
     assert (good / ".om").is_dir()
 
 
-def test_reprompts_when_parent_missing(runner: CliRunner, tmp_path: Path) -> None:
+def test_reprompts_when_parent_missing(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     bad = tmp_path / "no" / "such" / "parent" / "vault"
     good = tmp_path / "good"
     cfg_dir = tmp_path / "cfg"
@@ -91,7 +91,7 @@ def test_reprompts_when_parent_missing(runner: CliRunner, tmp_path: Path) -> Non
     assert (good / ".om").is_dir()
 
 
-def test_rejects_invalid_editor_then_accepts(runner: CliRunner, tmp_path: Path) -> None:
+def test_rejects_invalid_editor_then_accepts(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     vault = tmp_path / "vault"
     cfg_dir = tmp_path / "cfg"
 
@@ -106,7 +106,7 @@ def test_rejects_invalid_editor_then_accepts(runner: CliRunner, tmp_path: Path) 
     assert data["editor"] == "vim"
 
 
-def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: Path) -> None:
+def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     cfg_dir = tmp_path / "cfg"
     cfg_dir.mkdir()
     cfg_path = cfg_dir / "config.toml"
@@ -126,7 +126,7 @@ def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: Path)
 
 
 def test_tilde_expansion_uses_home_env(
-    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    runner: CliRunner, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_home = tmp_path / "home"
     fake_home.mkdir()
@@ -146,7 +146,7 @@ def test_tilde_expansion_uses_home_env(
 
 
 def test_relative_path_is_stored_absolute(
-    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    runner: CliRunner, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
     cfg_dir = tmp_path / "cfg"
@@ -161,5 +161,5 @@ def test_relative_path_is_stored_absolute(
     data = _read_toml(cfg_dir / "config.toml")
     stored = data["vault"]
     assert isinstance(stored, str)
-    assert Path(stored).is_absolute()
-    assert Path(stored) == (tmp_path / "vault").resolve()
+    assert pathlib.Path(stored).is_absolute()
+    assert pathlib.Path(stored) == (tmp_path / "vault").resolve()

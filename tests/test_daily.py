@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import stat
 from datetime import UTC, date, datetime
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -32,20 +32,20 @@ EMPTY_BODY = "\n### Notes\n\n\n### TODOs\n\n\n"
 
 
 @pytest.fixture
-def vault(tmp_path: Path) -> Path:
+def vault(tmp_path: pathlib.Path) -> pathlib.Path:
     v = tmp_path / "vault"
     (v / ".om").mkdir(parents=True)
     return v
 
 
 @pytest.fixture
-def cfg_dir(tmp_path: Path) -> Path:
+def cfg_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     d = tmp_path / "cfg"
     d.mkdir()
     return d
 
 
-def _write_cfg(cfg_dir: Path, vault: Path, editor: str) -> None:
+def _write_cfg(cfg_dir: pathlib.Path, vault: pathlib.Path, editor: str) -> None:
     Config(vault=vault, editor=editor).save(str(cfg_dir))
 
 
@@ -63,7 +63,7 @@ def freeze_clock(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
     return queue
 
 
-def _make_script(tmp_path: Path, body: str, name: str = "edit.sh") -> Path:
+def _make_script(tmp_path: pathlib.Path, body: str, name: str = "edit.sh") -> pathlib.Path:
     script = tmp_path / name
     # Skip any leading `+...` arg so the script can stand in for vim/nvim,
     # which `om` invokes as `vim + <path>` to land the cursor at EOF.
@@ -73,7 +73,9 @@ def _make_script(tmp_path: Path, body: str, name: str = "edit.sh") -> Path:
     return script
 
 
-def _appender(tmp_path: Path, payload: str = "edited\n", name: str = "appender.sh") -> Path:
+def _appender(
+    tmp_path: pathlib.Path, payload: str = "edited\n", name: str = "appender.sh"
+) -> pathlib.Path:
     return _make_script(tmp_path, f'printf "%s" "{payload}" >> "$1"', name=name)
 
 
@@ -85,9 +87,9 @@ def test_help(runner: CliRunner) -> None:
 
 def test_creates_todays_file_with_daily_tag(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     del freeze_clock
@@ -103,7 +105,7 @@ def test_creates_todays_file_with_daily_tag(
 
 
 def test_discards_when_unchanged(
-    runner: CliRunner, cfg_dir: Path, vault: Path, freeze_clock: list[datetime]
+    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_clock: list[datetime]
 ) -> None:
     del freeze_clock
     _write_cfg(cfg_dir, vault, "true")
@@ -115,9 +117,9 @@ def test_discards_when_unchanged(
 
 def test_reopens_existing_daily_note_preserving_tags(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(daily_cmd, "_today_local", lambda: FROZEN_TODAY)
@@ -151,7 +153,7 @@ def test_reopens_existing_daily_note_preserving_tags(
 
 
 def test_errors_when_no_vault_configured(
-    runner: CliRunner, tmp_path: Path, freeze_clock: list[datetime]
+    runner: CliRunner, tmp_path: pathlib.Path, freeze_clock: list[datetime]
 ) -> None:
     del freeze_clock
     empty_cfg = tmp_path / "empty"
@@ -161,7 +163,7 @@ def test_errors_when_no_vault_configured(
     assert "no vault configured" in result.output
 
 
-def _write_prior_daily(vault: Path, name: str, body: str) -> None:
+def _write_prior_daily(vault: pathlib.Path, name: str, body: str) -> None:
     """Write a prior daily with valid frontmatter so `split_document` works."""
     iso = name[:-3] if name.endswith(".md") else name
     text = (
@@ -178,9 +180,9 @@ def _write_prior_daily(vault: Path, name: str, body: str) -> None:
 
 def test_carries_forward_flat_open_todos(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     del freeze_clock
@@ -206,8 +208,8 @@ def test_carries_forward_flat_open_todos(
 
 def test_completed_parent_drops_entire_subtree(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     del freeze_clock
@@ -227,9 +229,9 @@ def test_completed_parent_drops_entire_subtree(
 
 def test_open_parent_carries_subtree_minus_completed_children(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     del freeze_clock
@@ -259,9 +261,9 @@ def test_open_parent_carries_subtree_minus_completed_children(
 
 def test_carry_forward_preserves_existing_from_suffix_on_top_level(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     del freeze_clock
@@ -281,9 +283,9 @@ def test_carry_forward_preserves_existing_from_suffix_on_top_level(
 
 def test_no_prior_daily_means_empty_todos_section(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     del freeze_clock
@@ -297,9 +299,9 @@ def test_no_prior_daily_means_empty_todos_section(
 
 def test_picks_most_recent_prior_daily(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     del freeze_clock
@@ -316,9 +318,9 @@ def test_picks_most_recent_prior_daily(
 
 def test_ignores_non_daily_markdown_files_when_finding_prior(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     del freeze_clock
@@ -340,9 +342,9 @@ def test_ignores_non_daily_markdown_files_when_finding_prior(
 
 def test_ignores_invalid_date_filenames(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     del freeze_clock
@@ -363,9 +365,9 @@ def test_ignores_invalid_date_filenames(
 
 def test_does_not_recarry_when_today_already_exists(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reopening today's file must not inject yesterday's TODOs again."""
@@ -405,9 +407,9 @@ def test_does_not_recarry_when_today_already_exists(
 
 def test_carry_forward_with_no_user_edits_does_not_discard(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_clock: list[datetime],
 ) -> None:
     """When carryover is non-empty, an unedited save still keeps the file."""

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
 import shutil
-from pathlib import Path
 
 import click
 
@@ -49,7 +49,7 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
     click.echo(f"Wrote config to {config_path}")
 
 
-def _prompt_vault_path() -> Path:
+def _prompt_vault_path() -> pathlib.Path:
     while True:
         raw = click.prompt("Vault path", type=str).strip()
         if not raw:

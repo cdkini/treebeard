@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import stat
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -20,20 +20,20 @@ FROZEN_LATER = datetime(2026, 5, 7, 15, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
-def vault(tmp_path: Path) -> Path:
+def vault(tmp_path: pathlib.Path) -> pathlib.Path:
     v = tmp_path / "vault"
     (v / ".om").mkdir(parents=True)
     return v
 
 
 @pytest.fixture
-def cfg_dir(tmp_path: Path) -> Path:
+def cfg_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     d = tmp_path / "cfg"
     d.mkdir()
     return d
 
 
-def _write_cfg(cfg_dir: Path, vault: Path, editor: str) -> None:
+def _write_cfg(cfg_dir: pathlib.Path, vault: pathlib.Path, editor: str) -> None:
     """Pre-seed `cfg_dir/config.toml` via the Config dataclass."""
     Config(vault=vault, editor=editor).save(str(cfg_dir))
 
@@ -50,7 +50,7 @@ def freeze_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
     return queue
 
 
-def _make_script(tmp_path: Path, body: str, name: str = "edit.sh") -> Path:
+def _make_script(tmp_path: pathlib.Path, body: str, name: str = "edit.sh") -> pathlib.Path:
     """Write an executable shell script that runs `body` with $1 == file path.
 
     Skips any leading `+...` arg so the script can stand in for vim/nvim,
@@ -63,11 +63,15 @@ def _make_script(tmp_path: Path, body: str, name: str = "edit.sh") -> Path:
     return script
 
 
-def _appender(tmp_path: Path, payload: str = "edited\n", name: str = "appender.sh") -> Path:
+def _appender(
+    tmp_path: pathlib.Path, payload: str = "edited\n", name: str = "appender.sh"
+) -> pathlib.Path:
     return _make_script(tmp_path, f'printf "%s" "{payload}" >> "$1"', name=name)
 
 
-def _title_setter(tmp_path: Path, new_title: str, name: str = "set_title.sh") -> Path:
+def _title_setter(
+    tmp_path: pathlib.Path, new_title: str, name: str = "set_title.sh"
+) -> pathlib.Path:
     """Replace `title:` line in the file (assumes a leading frontmatter block)."""
     body = (
         "tmp=$(mktemp)\n"
@@ -86,9 +90,9 @@ def test_help(runner: CliRunner) -> None:
 
 def test_creates_named_file_with_frontmatter(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_now: list[datetime],
 ) -> None:
     del freeze_now
@@ -115,7 +119,7 @@ def test_creates_named_file_with_frontmatter(
 
 
 def test_named_discards_when_unchanged(
-    runner: CliRunner, cfg_dir: Path, vault: Path, freeze_now: list[datetime]
+    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
 ) -> None:
     del freeze_now
     _write_cfg(cfg_dir, vault, "true")
@@ -126,7 +130,7 @@ def test_named_discards_when_unchanged(
 
 
 def test_named_discards_on_editor_failure(
-    runner: CliRunner, cfg_dir: Path, vault: Path, freeze_now: list[datetime]
+    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
 ) -> None:
     del freeze_now
     _write_cfg(cfg_dir, vault, "false")
@@ -137,9 +141,9 @@ def test_named_discards_on_editor_failure(
 
 def test_slugifies_name(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_now: list[datetime],
 ) -> None:
     del freeze_now
@@ -154,9 +158,9 @@ def test_slugifies_name(
 
 def test_strips_md_extension(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_now: list[datetime],
 ) -> None:
     del freeze_now
@@ -176,9 +180,9 @@ def test_strips_md_extension(
 
 def test_unnamed_falls_back_to_timestamp_when_title_left_empty(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_now: list[datetime],
 ) -> None:
     del freeze_now
@@ -198,9 +202,9 @@ def test_unnamed_falls_back_to_timestamp_when_title_left_empty(
 
 def test_unnamed_uses_edited_title_for_filename(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_now: list[datetime],
 ) -> None:
     del freeze_now
@@ -216,7 +220,7 @@ def test_unnamed_uses_edited_title_for_filename(
 
 
 def test_unnamed_discards_when_unchanged(
-    runner: CliRunner, cfg_dir: Path, vault: Path, freeze_now: list[datetime]
+    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
 ) -> None:
     del freeze_now
     _write_cfg(cfg_dir, vault, "true")
@@ -230,9 +234,9 @@ def test_unnamed_discards_when_unchanged(
 
 def test_unnamed_collision_keeps_draft(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_now: list[datetime],
 ) -> None:
     del freeze_now
@@ -251,7 +255,7 @@ def test_unnamed_collision_keeps_draft(
 
 
 def test_reopen_does_not_clobber_when_unchanged(
-    runner: CliRunner, cfg_dir: Path, vault: Path, freeze_now: list[datetime]
+    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
 ) -> None:
     del freeze_now
     path = vault / "todo.md"
@@ -276,9 +280,9 @@ def test_reopen_does_not_clobber_when_unchanged(
 
 def test_reopen_bumps_updated_at_when_mtime_moves(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     queue: list[datetime] = [FROZEN_NOW, FROZEN_LATER]
@@ -318,9 +322,9 @@ def test_reopen_bumps_updated_at_when_mtime_moves(
 
 def test_reopen_with_malformed_frontmatter_is_noop(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_now: list[datetime],
 ) -> None:
     del freeze_now
@@ -336,7 +340,7 @@ def test_reopen_with_malformed_frontmatter_is_noop(
     assert path.read_text(encoding="utf-8") == "just a body, no frontmatter\nmore\n"
 
 
-def test_errors_when_no_vault_configured(runner: CliRunner, tmp_path: Path) -> None:
+def test_errors_when_no_vault_configured(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     empty_cfg = tmp_path / "empty"
     empty_cfg.mkdir()
     result = runner.invoke(cli, ["note", "--config-dir", str(empty_cfg), "hi"])
@@ -345,7 +349,7 @@ def test_errors_when_no_vault_configured(runner: CliRunner, tmp_path: Path) -> N
 
 
 def test_errors_on_empty_slug(
-    runner: CliRunner, cfg_dir: Path, vault: Path, freeze_now: list[datetime]
+    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
 ) -> None:
     del freeze_now
     _write_cfg(cfg_dir, vault, "true")
@@ -356,9 +360,9 @@ def test_errors_on_empty_slug(
 
 def test_named_keeps_tags_when_user_adds_them(
     runner: CliRunner,
-    cfg_dir: Path,
-    vault: Path,
-    tmp_path: Path,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
     freeze_now: list[datetime],
 ) -> None:
     del freeze_now
