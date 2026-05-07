@@ -35,10 +35,11 @@ def _stable_editor_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
 
 
-# Inputs to the init prompt sequence: vault path, editor, previewer, email,
+# Inputs to the init prompt sequence: editor, previewer, chat model, email,
 # name, remote. The two identity prompts are blank-Entered so they accept the
 # global default from `_isolated_git_global`. Remote is blank to skip.
-_DEFAULT_TAIL = "vim\nbat\n\n\n\n"
+# Tests prepend the vault path before this tail.
+_DEFAULT_TAIL = "vim\nbat\nsonnet\n\n\n\n"
 
 
 def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path) -> None:
@@ -58,7 +59,12 @@ def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     assert f"Wrote config to {cfg_dir / 'config.toml'}" in result.output
 
     data = _read_toml(cfg_dir / "config.toml")
-    assert data == {"vault": str(vault), "editor": "vim", "previewer": "bat"}
+    assert data == {
+        "vault": str(vault),
+        "editor": "vim",
+        "previewer": "bat",
+        "chat_model": "sonnet",
+    }
 
 
 def test_persists_chosen_editor(runner: CliRunner, tmp_path: pathlib.Path) -> None:
@@ -68,7 +74,7 @@ def test_persists_chosen_editor(runner: CliRunner, tmp_path: pathlib.Path) -> No
     result = runner.invoke(
         cli,
         ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nnvim\nbat\n\n\n\n",
+        input=f"{vault}\nnvim\nbat\nsonnet\n\n\n\n",
     )
 
     assert result.exit_code == 0, result.output
@@ -83,7 +89,7 @@ def test_persists_chosen_previewer(runner: CliRunner, tmp_path: pathlib.Path) ->
     result = runner.invoke(
         cli,
         ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nvim\nglow\n\n\n\n",
+        input=f"{vault}\nvim\nglow\nsonnet\n\n\n\n",
     )
 
     assert result.exit_code == 0, result.output
@@ -200,7 +206,7 @@ def test_rejects_invalid_editor_then_accepts(runner: CliRunner, tmp_path: pathli
     result = runner.invoke(
         cli,
         ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nemacs\nvim\nbat\n\n\n\n",
+        input=f"{vault}\nemacs\nvim\nbat\nsonnet\n\n\n\n",
     )
 
     assert result.exit_code == 0, result.output
@@ -244,7 +250,12 @@ def test_tilde_expansion_uses_home_env(
     assert result.exit_code == 0, result.output
     assert (fake_home / "vault" / ".om").is_dir()
     data = _read_toml(cfg_dir / "config.toml")
-    assert data == {"vault": str(fake_home / "vault"), "editor": "vim", "previewer": "bat"}
+    assert data == {
+        "vault": str(fake_home / "vault"),
+        "editor": "vim",
+        "previewer": "bat",
+        "chat_model": "sonnet",
+    }
 
 
 def test_relative_path_is_stored_absolute(
@@ -296,7 +307,7 @@ def test_writes_git_identity_to_repo(runner: CliRunner, tmp_path: pathlib.Path) 
     result = runner.invoke(
         cli,
         ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nvim\nbat\nme@example.com\nMe\n\n",
+        input=f"{vault}\nvim\nbat\nsonnet\nme@example.com\nMe\n\n",
     )
 
     assert result.exit_code == 0, result.output
@@ -312,7 +323,7 @@ def test_adds_remote_when_url_provided(runner: CliRunner, tmp_path: pathlib.Path
     result = runner.invoke(
         cli,
         ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nvim\nbat\n\n\n{remote_url}\n",
+        input=f"{vault}\nvim\nbat\nsonnet\n\n\n{remote_url}\n",
     )
 
     assert result.exit_code == 0, result.output

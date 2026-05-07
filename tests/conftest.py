@@ -79,9 +79,15 @@ def write_cfg(
     vault: pathlib.Path,
     editor: str = "vim",
     previewer: str = "bat",
+    chat_model: str = "sonnet",
 ) -> None:
     """Pre-seed `cfg_dir/config.toml` for tests."""
-    Config(vault=vault, editor=editor, previewer=previewer).save(str(cfg_dir))
+    Config(
+        vault=vault,
+        editor=editor,
+        previewer=previewer,
+        chat_model=chat_model,
+    ).save(str(cfg_dir))
 
 
 @pytest.fixture
@@ -197,5 +203,5 @@ def mock_claude_sdk(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
                 uuid=None,
             )
 
-    monkeypatch.setattr(chat_mod, "_make_client", lambda _vault: _FakeClient())
+    monkeypatch.setattr(chat_mod, "_make_client", lambda _vault, _model: _FakeClient())
     return state

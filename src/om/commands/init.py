@@ -15,8 +15,10 @@ from rich.text import Text
 from om import dependencies, git, ui
 from om.config import (
     CONFIG_FILENAME,
+    DEFAULT_CHAT_MODEL,
     DEFAULT_CONFIG_DIR,
     DEFAULT_PREVIEWER,
+    VALID_CHAT_MODEL_CHOICES,
     VALID_EDITORS,
     VALID_PREVIEWERS,
     Config,
@@ -113,6 +115,7 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
     _section("Tools")
     editor = _prompt_editor()
     previewer = _prompt_previewer()
+    chat_model = _prompt_chat_model()
 
     adopted = (vault_path / ".om").is_dir() and (vault_path / ".git").is_dir()
 
@@ -125,7 +128,12 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
     if not git.has_remote(vault_path):
         _maybe_add_remote(vault_path)
 
-    config = Config(vault=vault_path, editor=editor, previewer=previewer)
+    config = Config(
+        vault=vault_path,
+        editor=editor,
+        previewer=previewer,
+        chat_model=chat_model,
+    )
     config_path = config.save(config_dir)
 
     # Guarantee the repo has a HEAD so downstream commands (sync, the
@@ -182,6 +190,19 @@ def _prompt_editor() -> str:
     found = dependencies.first_available(dependencies.EDITORS)
     default = found.name if found is not None else None
     return _ask_choice("Editor", VALID_EDITORS, default)
+
+
+def _prompt_chat_model() -> str:
+    """Pick which Claude family `om chat` will use.
+
+    Stores the family alias (`sonnet`/`opus`) in config.toml rather
+    than a pinned model id, so the bundled `claude` CLI resolves it to
+    whatever the current generation is — `om chat` rolls forward when
+    a newer Sonnet/Opus ships, no config edit needed. Sonnet is the
+    default: faster TTFT and lower cost, which matters for an
+    interactive chat REPL.
+    """
+    return _ask_choice("Chat model", VALID_CHAT_MODEL_CHOICES, DEFAULT_CHAT_MODEL)
 
 
 def _prompt_previewer() -> str:

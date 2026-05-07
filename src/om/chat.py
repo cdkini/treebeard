@@ -83,7 +83,7 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
-def _make_client(vault: pathlib.Path) -> ClaudeSDKClient:
+def _make_client(vault: pathlib.Path, model: str) -> ClaudeSDKClient:
     """Vault-aware chat session.
 
     The SDK still spawns the bundled `claude` CLI (so Claude Code
@@ -111,6 +111,7 @@ def _make_client(vault: pathlib.Path) -> ClaudeSDKClient:
         setting_sources=["project"],
         cwd=str(vault),
         include_partial_messages=True,
+        model=model,
         # Latency: skip silent reasoning before the first token. Casual
         # chat doesn't benefit much from extended thinking, and disabling
         # it cuts several seconds off TTFT on short replies.
@@ -122,18 +123,18 @@ def _make_client(vault: pathlib.Path) -> ClaudeSDKClient:
     return ClaudeSDKClient(options=options)
 
 
-def run_repl(vault: pathlib.Path) -> None:
-    asyncio.run(_repl_async(vault))
+def run_repl(vault: pathlib.Path, model: str) -> None:
+    asyncio.run(_repl_async(vault, model))
 
 
-async def _repl_async(vault: pathlib.Path) -> None:
+async def _repl_async(vault: pathlib.Path, model: str) -> None:
     started_at = _now_utc()
     transcript = conversation_path(vault, started_at)
     out = Console(highlight=False)
 
-    _render_header(vault, transcript)
+    _render_header(vault, transcript, model)
 
-    async with _make_client(vault) as client:
+    async with _make_client(vault, model) as client:
         while True:
             try:
                 user_text = await asyncio.to_thread(_read_line)
@@ -161,13 +162,15 @@ async def _repl_async(vault: pathlib.Path) -> None:
                 continue
 
 
-def _render_header(vault: pathlib.Path, transcript: pathlib.Path) -> None:
+def _render_header(vault: pathlib.Path, transcript: pathlib.Path, model: str) -> None:
     body = Text.assemble(
-        ("vault     ", "dim"),
+        ("vault      ", "dim"),
         (f"{vault}\n", "white"),
         ("transcript ", "dim"),
         (f"{transcript}\n", "white"),
-        ("exit      ", "dim"),
+        ("model      ", "dim"),
+        (f"{model}\n", "white"),
+        ("exit       ", "dim"),
         ("Ctrl-D or Ctrl-C", "white"),
     )
     status_console.print(

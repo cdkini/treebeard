@@ -171,7 +171,7 @@ def test_client_options_open_session_in_vault_with_readonly_tools(
 
     from om.chat import ALLOWED_TOOLS, _make_client
 
-    client = _make_client(vault)
+    client = _make_client(vault, "sonnet")
     assert isinstance(client, ClaudeSDKClient)
     options = client.options
     # Read-only tools only — no Bash, Write, Edit, etc.
@@ -193,3 +193,5 @@ def test_client_options_open_session_in_vault_with_readonly_tools(
     # System prompt is overridden and mentions the vault.
     assert isinstance(options.system_prompt, str)
     assert "vault" in options.system_prompt.lower()
+    # Model alias is forwarded as-is — the `claude` CLI resolves it.
+    assert options.model == "sonnet"

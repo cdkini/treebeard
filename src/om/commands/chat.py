@@ -25,4 +25,4 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
     """Interactive Claude chat session (transcript saved in vault)."""
     ctx.ensure_object(dict)["config_dir"] = config_dir
     cfg = load_config(config_dir)
-    chat.run_repl(cfg.vault)
+    chat.run_repl(cfg.vault, cfg.chat_model)

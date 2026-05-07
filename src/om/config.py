@@ -1,11 +1,12 @@
 """Shared config helpers for `om`.
 
 The CLI persists a small TOML config at `<config_dir>/config.toml`,
-where `<config_dir>` defaults to `~/.om`. Three keys are recognized:
+where `<config_dir>` defaults to `~/.om`. Four keys are recognized:
 `vault` (absolute path to the user's vault), `editor` (executable
 to launch for editing notes; `om init` prompts for one of `vim`,
-`nvim`), and `previewer` (markdown previewer used in `om find`'s
-preview pane; one of `bat`, `glow`, `cat`).
+`nvim`), `previewer` (markdown previewer used in `om find`'s
+preview pane; one of `bat`, `glow`, `cat`), and `chat_model` (the
+Claude model id used by `om chat`).
 """
 
 from __future__ import annotations
@@ -24,12 +25,21 @@ DEFAULT_EDITOR = "vim"
 VALID_PREVIEWERS = ("bat", "glow", "cat")
 DEFAULT_PREVIEWER = "bat"
 
+# Aliases the bundled `claude` CLI itself resolves to the current
+# generation of each family — pinning the alias (rather than a specific
+# model id like `claude-sonnet-4-6`) means `om chat` rolls forward
+# automatically when Anthropic ships a newer Sonnet/Opus. Users can
+# still hand-edit `chat_model` to a pinned id if they want stability.
+VALID_CHAT_MODEL_CHOICES = ("sonnet", "opus")
+DEFAULT_CHAT_MODEL = "sonnet"
+
 
 @dataclass(frozen=True)
 class Config:
     vault: pathlib.Path
     editor: str
     previewer: str = DEFAULT_PREVIEWER
+    chat_model: str = DEFAULT_CHAT_MODEL
 
     def to_toml(self) -> str:
         return _toml_lines(
@@ -37,6 +47,7 @@ class Config:
                 "vault": str(self.vault),
                 "editor": self.editor,
                 "previewer": self.previewer,
+                "chat_model": self.chat_model,
             }
         )
 
@@ -110,7 +121,14 @@ def load_config(config_dir: str | None) -> Config:
     previewer = raw.get("previewer")
     if not isinstance(previewer, str) or previewer not in VALID_PREVIEWERS:
         previewer = DEFAULT_PREVIEWER
-    return Config(vault=vault, editor=editor, previewer=previewer)
+    chat_model_raw = raw.get("chat_model")
+    # Pass-through: any string the `claude` CLI accepts (`sonnet`,
+    # `opus`, or a pinned id like `claude-sonnet-4-6`) is fine here.
+    if isinstance(chat_model_raw, str) and chat_model_raw:
+        chat_model = chat_model_raw
+    else:
+        chat_model = DEFAULT_CHAT_MODEL
+    return Config(vault=vault, editor=editor, previewer=previewer, chat_model=chat_model)
 
 
 def load_vault_path(config_dir: str | None) -> pathlib.Path | None:
