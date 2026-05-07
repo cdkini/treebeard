@@ -7,16 +7,58 @@ To add a new command, drop a module into `om/commands/` that defines a
 
 from __future__ import annotations
 
+import io
 from datetime import UTC, datetime
 
 import click
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 
 from om import __version__, git
 from om.commands import iter_commands
 from om.config import load_vault_path
 
 
+class RichGroup(click.Group):
+    """`click.Group` that renders help as a Rich table.
+
+    The header (usage + description), options, and epilog stay on Click's
+    formatter so flag handling stays canonical. Only the "Commands"
+    section is replaced with a Rich `Table` keyed by command name.
+    """
+
+    def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        commands = [(name, self.get_command(ctx, name)) for name in self.list_commands(ctx)]
+        commands = [(n, c) for n, c in commands if c is not None and not c.hidden]
+        if not commands:
+            return
+
+        table = Table(
+            show_header=False,
+            box=None,
+            padding=(0, 2),
+            pad_edge=False,
+        )
+        table.add_column(style="bold cyan", no_wrap=True)
+        table.add_column(style="white")
+        for name, cmd in commands:
+            help_text = cmd.get_short_help_str(limit=120) if cmd is not None else ""
+            table.add_row(name, Text(help_text))
+
+        # Render the Rich table to a string and feed it into Click's
+        # formatter buffer so `--help` output remains a single contiguous
+        # chunk (and `om help` echoing `parent.get_help()` works).
+        buf = io.StringIO()
+        Console(file=buf, force_terminal=False, width=formatter.width or 100).print(
+            "\n[bold]Commands[/bold]"
+        )
+        Console(file=buf, force_terminal=False, width=formatter.width or 100).print(table)
+        formatter.write(buf.getvalue())
+
+
 @click.group(
+    cls=RichGroup,
     help="om — the omniscience CLI.",
     context_settings={"help_option_names": ["-h", "--help"]},
     invoke_without_command=True,

@@ -21,18 +21,19 @@ from om.config import (
     load_config,
 )
 from om.editor import reopen
+from om.ui import OmError
 
 FZF_CANCELLED = 130
 
 
 def _check_rg() -> None:
     if shutil.which("rg") is None:
-        raise click.ClickException("ripgrep is required; install via `brew install ripgrep`")
+        raise OmError("ripgrep is required", hint="install via `brew install ripgrep`")
 
 
 def _check_fzf() -> None:
     if shutil.which("fzf") is None:
-        raise click.ClickException("fzf is required; install via `brew install fzf`")
+        raise OmError("fzf is required", hint="install via `brew install fzf`")
 
 
 def _preview_cmd() -> str:
@@ -103,7 +104,7 @@ def run(vault: pathlib.Path, editor: str) -> None:
     if not target_path.is_absolute():
         target_path = vault / target_path
     if not target_path.exists():
-        raise click.ClickException(f"selected file no longer exists: {target_path}")
+        raise OmError(f"selected file no longer exists: {target_path}")
 
     try:
         line_no: int | None = int(parts[1])

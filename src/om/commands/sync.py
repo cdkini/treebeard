@@ -6,12 +6,13 @@ import subprocess
 
 import click
 
-from om import git
+from om import git, ui
 from om.config import (
     CONFIG_FILENAME,
     DEFAULT_CONFIG_DIR,
     load_config,
 )
+from om.ui import OmError
 
 
 @click.command("sync")
@@ -29,13 +30,14 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
     cfg = load_config(config_dir)
 
     if not git.has_remote(cfg.vault):
-        raise click.ClickException(
-            "no git remote configured; add one with `git remote add origin <url>`"
+        raise OmError(
+            "no git remote configured",
+            hint="add one with `git remote add origin <url>`",
         )
 
     try:
         git.pull_rebase_push(cfg.vault)
     except subprocess.CalledProcessError as exc:
-        raise click.ClickException(f"sync failed: {exc}") from exc
+        raise OmError(f"sync failed: {exc}") from exc
 
-    click.echo("Synced.")
+    ui.success("Synced.")

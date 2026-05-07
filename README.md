@@ -6,9 +6,15 @@
 
 Requires [uv](https://docs.astral.sh/uv/), Python 3.12+, [`fzf`](https://github.com/junegunn/fzf)
 (`brew install fzf`), and [`ripgrep`](https://github.com/BurntSushi/ripgrep)
-(`brew install ripgrep`, used by `om grep`). [`bat`](https://github.com/sharkdp/bat) is optional —
-the picker uses it for syntax-highlighted previews when present, falling
-back to `cat`.
+(`brew install ripgrep`, used by `om grep`).
+
+For the `om find` preview pane you can pick one of
+[`bat`](https://github.com/sharkdp/bat) (`brew install bat`,
+syntax-highlighted source — the default),
+[`glow`](https://github.com/charmbracelet/glow) (`brew install glow`,
+rendered markdown), or `cat` (plain, always available). `om init` lets
+you pick which one; the runtime falls through the list if your chosen
+tool isn't installed.
 
 ```bash
 make install

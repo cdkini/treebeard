@@ -185,7 +185,7 @@ def test_esc_cancels_silently(
     assert result.exit_code == 0, result.output
 
 
-def test_preview_uses_bat_when_available(
+def test_preview_uses_configured_previewer(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
@@ -194,7 +194,7 @@ def test_preview_uses_bat_when_available(
     freeze_now: list,
 ) -> None:
     del freeze_now, fake_editor
-    write_cfg(cfg_dir, vault)
+    write_cfg(cfg_dir, vault, previewer="bat")
     _seed_note(vault, "foo.md", "foo")
     monkeypatch.setattr(find_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
     capture: list[dict[str, Any]] = []

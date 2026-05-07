@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 import click
 
+from om import ui
 from om.commands.note import create_named_note, create_scratch
 from om.config import (
     CONFIG_FILENAME,
@@ -28,11 +29,20 @@ from om.editor import reopen
 from om.frontmatter import split_document
 from om.post_edit import PostEditAbort, slugify
 from om.timefmt import humanize_mtime
+from om.ui import OmError
 from om.vault import list_recent_notes
 
 BARE_LIMIT = 20
 FZF_CANCELLED = 130
 TITLE_WIDTH = 30
+
+# fzf substitutes `{2}` with the path field for `om find`. Each command
+# is a shell snippet, not an argv list.
+_PREVIEWER_COMMANDS = {
+    "bat": "bat --color=always --style=plain --language=markdown {2}",
+    "glow": "glow -s dark {2}",
+    "cat": "cat {2}",
+}
 
 
 def _now_utc() -> datetime:
@@ -41,14 +51,21 @@ def _now_utc() -> datetime:
 
 def _check_fzf() -> None:
     if shutil.which("fzf") is None:
-        raise click.ClickException("fzf is required; install via `brew install fzf`")
+        raise OmError("fzf is required", hint="install via `brew install fzf`")
 
 
-def _preview_cmd() -> str:
-    """Pick the preview renderer. fzf substitutes `{2}` with the path field."""
-    if shutil.which("bat") is not None:
-        return "bat --color=always --style=plain --language=markdown {2}"
-    return "cat {2}"
+def _preview_cmd(configured: str) -> str:
+    """Pick the preview renderer.
+
+    Try the user's configured previewer first, then walk the rest of the
+    valid list. `cat` is always present, so the ladder always terminates
+    in a usable command — no synthetic floor needed.
+    """
+    order = [configured, *(name for name in _PREVIEWER_COMMANDS if name != configured)]
+    for name in order:
+        if shutil.which(name) is not None:
+            return _PREVIEWER_COMMANDS[name]
+    return _PREVIEWER_COMMANDS["cat"]
 
 
 def _truncate(text: str, width: int) -> str:
@@ -85,7 +102,7 @@ def _format_line(path: pathlib.Path, now: float) -> str:
     return f"{display}\t{path}"
 
 
-def _run_fzf(lines: list[str]) -> tuple[str, str, str]:
+def _run_fzf(lines: list[str], previewer: str) -> tuple[str, str, str]:
     """Run fzf with the picker's flags. Returns `(query, key, selection)`.
 
     `--print-query` puts the query on the first line, `--expect=ctrl-n`
@@ -97,7 +114,7 @@ def _run_fzf(lines: list[str]) -> tuple[str, str, str]:
         "fzf",
         "--delimiter=\t",
         "--with-nth=1",
-        f"--preview={_preview_cmd()}",
+        f"--preview={_preview_cmd(previewer)}",
         "--preview-window=right:60%",
         "--height=80%",
         "--prompt=om> ",
@@ -121,17 +138,17 @@ def _run_fzf(lines: list[str]) -> tuple[str, str, str]:
     return (query, key, selection)
 
 
-def run(vault: pathlib.Path, editor: str, limit: int | None) -> None:
+def run(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> None:
     """Run the picker against `vault`. Shared by `om find` and bare `om`."""
     _check_fzf()
     paths = list_recent_notes(vault, limit)
     if not paths:
-        click.echo("vault is empty; create a note with `om note <name>`")
+        ui.info("vault is empty — create a note with `om note <name>`")
         return
 
     now_seconds = time.time()
     lines = [_format_line(p, now_seconds) for p in paths]
-    query, key, selection = _run_fzf(lines)
+    query, key, selection = _run_fzf(lines, previewer)
 
     if key == "ctrl-n":
         now = _now_utc()
@@ -140,10 +157,13 @@ def run(vault: pathlib.Path, editor: str, limit: int | None) -> None:
             try:
                 slug = slugify(query)
             except PostEditAbort as exc:
-                raise click.ClickException(str(exc)) from exc
+                raise OmError(str(exc)) from exc
             target = vault / f"{slug}.md"
             if target.exists():
-                raise click.ClickException(f"{target.name} already exists; pick it from the list")
+                raise OmError(
+                    f"{target.name} already exists",
+                    hint="pick it from the list instead",
+                )
             create_named_note(vault, slug, query, now, editor)
         else:
             create_scratch(vault, now, editor)
@@ -157,7 +177,7 @@ def run(vault: pathlib.Path, editor: str, limit: int | None) -> None:
         return
     target_path = pathlib.Path(parts[1])
     if not target_path.exists():
-        raise click.ClickException(f"selected file no longer exists: {target_path}")
+        raise OmError(f"selected file no longer exists: {target_path}")
     reopen(target_path, editor)
 
 
@@ -181,4 +201,4 @@ def command(ctx: click.Context, limit: int | None, config_dir: str | None) -> No
     """Fuzzy-find a note across the whole vault and open it."""
     ctx.ensure_object(dict)["config_dir"] = config_dir
     cfg = load_config(config_dir)
-    run(cfg.vault, cfg.editor, limit)
+    run(cfg.vault, cfg.editor, cfg.previewer, limit)

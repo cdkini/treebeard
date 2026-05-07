@@ -17,10 +17,10 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
-import click
-
+from om import ui
 from om.frontmatter import Frontmatter, split_document
 from om.post_edit import PostEditAbort, reconcile_filename
+from om.ui import OmError
 
 
 def _now_utc() -> datetime:
@@ -38,7 +38,7 @@ def run_editor(editor: str, path: pathlib.Path, *, start_line: int | None = None
     try:
         subprocess.run([editor, line_arg, str(path)], check=True)
     except subprocess.CalledProcessError as exc:
-        raise click.ClickException(f"editor exited with status {exc.returncode}") from exc
+        raise OmError(f"editor exited with status {exc.returncode}") from exc
 
 
 def rewrite_with(path: pathlib.Path, contents: str, mutate: Callable[[Frontmatter], None]) -> None:
@@ -81,7 +81,7 @@ def edit_atomically(path: pathlib.Path) -> Iterator[list[bool]]:
             path.unlink(missing_ok=True)
         else:
             path.write_bytes(snapshot)
-        click.echo(f"edit reverted: {exc}")
+        ui.warn(f"edit reverted: {exc}")
 
 
 def edit_with_initial(
@@ -106,20 +106,20 @@ def edit_with_initial(
         path.write_text(initial, encoding="utf-8")
         try:
             run_editor(editor, path)
-        except click.ClickException:
+        except OmError:
             path.unlink(missing_ok=True)
             raise
 
         contents = path.read_text(encoding="utf-8")
         if contents == initial and not keep_when_unchanged:
             path.unlink()
-            click.echo(f"discarded empty note: {path}")
+            ui.info(f"discarded empty note: {path}")
             discarded = True
         else:
             rewrite_with(path, contents, mutate=lambda fm: None)
             final_path = reconcile_filename(path, now=_now_utc())
     if not aborted[0] and not discarded:
-        click.echo(str(final_path))
+        ui.path(str(final_path))
     return final_path
 
 
@@ -145,5 +145,5 @@ def reopen(path: pathlib.Path, editor: str, *, start_line: int | None = None) ->
             rewrite_with(path, contents, mutate=bump)
             final_path = reconcile_filename(path, now=bump_ts)
     if not aborted[0]:
-        click.echo(str(final_path))
+        ui.path(str(final_path))
     return final_path

@@ -21,6 +21,7 @@ from om.config import (
 from om.editor import edit_with_initial, reopen
 from om.frontmatter import Frontmatter
 from om.post_edit import PostEditAbort, scratch_filename, slugify
+from om.ui import OmError
 
 
 def _now_utc() -> datetime:
@@ -51,7 +52,7 @@ def command(ctx: click.Context, name: str | None, config_dir: str | None) -> Non
     try:
         slug = slugify(name)
     except PostEditAbort as exc:
-        raise click.ClickException(str(exc)) from exc
+        raise OmError(str(exc)) from exc
     path = cfg.vault / f"{slug}.md"
     if path.exists():
         reopen(path, cfg.editor)

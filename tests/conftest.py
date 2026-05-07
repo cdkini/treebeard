@@ -72,9 +72,14 @@ def cfg_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     return d
 
 
-def write_cfg(cfg_dir: pathlib.Path, vault: pathlib.Path, editor: str = "vim") -> None:
+def write_cfg(
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    editor: str = "vim",
+    previewer: str = "bat",
+) -> None:
     """Pre-seed `cfg_dir/config.toml` for tests."""
-    Config(vault=vault, editor=editor).save(str(cfg_dir))
+    Config(vault=vault, editor=editor, previewer=previewer).save(str(cfg_dir))
 
 
 @pytest.fixture

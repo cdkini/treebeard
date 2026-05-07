@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from om import editor
+from om import editor, ui
 from om.config import (
     CONFIG_FILENAME,
     DEFAULT_CONFIG_DIR,
@@ -28,4 +28,4 @@ def command(ctx: click.Context, config_dir: str | None) -> None:
     cfg = load_config(config_dir)
     path = config_path_for(config_dir)
     editor.run_editor(cfg.editor, path)
-    click.echo(str(path))
+    ui.path(str(path))
