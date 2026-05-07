@@ -20,6 +20,9 @@ tool isn't installed.
 make install
 ```
 
+This syncs dependencies and installs `om` onto your `PATH` via `uv tool install --editable`,
+so edits to `src/om/` take effect without reinstalling. `make uninstall` removes it.
+
 ## Usage
 
 Bare `om` opens an interactive picker over the 20 most recently edited
@@ -58,7 +61,7 @@ edits that would rename a daily off its date filename are reverted.
 ## Development
 
 ```bash
-make install   # uv sync
+make sync      # uv sync (deps only, no global install)
 make hooks     # one-time: install pre-commit hooks
 make fmt       # auto-format + auto-fix
 make lint      # ruff check + ruff format --check + basedpyright

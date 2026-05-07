@@ -1,7 +1,13 @@
-.PHONY: install hooks lint fmt test
+.PHONY: install sync hooks lint fmt test uninstall
 
-install:
+sync:
 	uv sync
+
+install: sync
+	uv tool install --editable --force .
+
+uninstall:
+	uv tool uninstall omniscience
 
 hooks:
 	uv run pre-commit install
