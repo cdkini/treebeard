@@ -19,7 +19,7 @@ FROZEN_FRONTMATTER = (
     "tags: [daily]\n"
     "---\n"
 )
-EMPTY_BODY = "\n### Notes\n\n\n### TODOs\n\n\n"
+EMPTY_BODY = "\n### TODOs\n\n\n### Notes\n\n\n"
 
 
 def append(payload: str) -> EditorFake:
@@ -159,7 +159,7 @@ def test_does_not_recarry_when_today_already_exists(
         "updated_at: 2026-05-07T10:00:00Z\n"
         "tags: [daily]\n"
         "---\n"
-        "\n### Notes\n\nalready noted\n\n### TODOs\n- [ ] today's task\n\n",
+        "\n### TODOs\n- [ ] today's task\n\n### Notes\n\nalready noted\n\n",
         encoding="utf-8",
     )
     old = today_path.stat().st_mtime - 60
