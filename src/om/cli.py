@@ -15,9 +15,11 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from om import __version__, dependencies, git
+from om import __version__, dependencies, git, ui
 from om.commands import iter_commands
 from om.config import load_vault_path
+
+UNSYNCED_WARN_THRESHOLD = 5
 
 
 class RichGroup(click.Group):
@@ -88,7 +90,8 @@ def cli(ctx: click.Context) -> None:
 
 
 def _on_close(ctx: click.Context) -> None:
-    """Auto-commit any working-tree changes left by the subcommand.
+    """Auto-commit any working-tree changes left by the subcommand, then
+    warn if local commits have piled up past `UNSYNCED_WARN_THRESHOLD`.
     No-ops when no subcommand ran (e.g. `om --help`)."""
     sub = ctx.invoked_subcommand
     if sub is None:
@@ -97,10 +100,13 @@ def _on_close(ctx: click.Context) -> None:
         vault = load_vault_path(ctx.obj.get("config_dir"))
         if vault is None or not (vault / ".git").is_dir():
             return
-        if not git.has_changes(vault):
-            return
-        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        git.commit_all(vault, f"{sub}: {ts}")
+        if git.has_changes(vault):
+            ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            git.commit_all(vault, f"{sub}: {ts}")
+
+        ahead = git.unsynced_commit_count(vault)
+        if ahead is not None and ahead >= UNSYNCED_WARN_THRESHOLD:
+            ui.warn(f"{ahead} unsynced commits — run [bold]om sync[/bold] to push to remote.")
     except Exception:
         return
 

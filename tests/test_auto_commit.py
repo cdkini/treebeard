@@ -155,3 +155,113 @@ def test_timestamp_is_utc_iso_z(
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
     assert result.exit_code == 0, result.output
     assert _head_message(vault) == "note: 2026-05-07T14:23:05Z"
+
+
+def _setup_upstream(vault: pathlib.Path, tmp_path: pathlib.Path) -> pathlib.Path:
+    """Make `vault` track a fresh bare repo as `origin/main`, with one
+    baseline commit pushed. Returns the bare-repo path."""
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", "--quiet", str(bare)], check=True)
+    (vault / "README.md").write_text("seed\n", encoding="utf-8")
+    _git(vault, "add", "-A")
+    _git(vault, "commit", "--quiet", "-m", "seed")
+    _git(vault, "remote", "add", "origin", str(bare))
+    _git(vault, "push", "--quiet", "-u", "origin", "main")
+    return bare
+
+
+def test_warns_when_five_or_more_unsynced(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    del freeze_now
+    _setup_upstream(vault, tmp_path)
+    write_cfg(cfg_dir, vault)
+
+    # Each `om note` produces exactly one auto-commit; five of them puts
+    # us at the threshold. The fifth invocation should print the warning.
+    outputs: list[str] = []
+    for i in range(5):
+        fake_editor.append(_append(f"body-{i}\n"))
+        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        assert result.exit_code == 0, result.output
+        outputs.append(result.output)
+
+    assert "5 unsynced commits" in outputs[-1]
+    assert "om sync" in outputs[-1]
+
+
+def test_no_warning_below_threshold(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    del freeze_now
+    _setup_upstream(vault, tmp_path)
+    write_cfg(cfg_dir, vault)
+
+    outputs: list[str] = []
+    for i in range(4):
+        fake_editor.append(_append(f"body-{i}\n"))
+        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        assert result.exit_code == 0, result.output
+        outputs.append(result.output)
+
+    assert "unsynced commits" not in outputs[-1]
+
+
+def test_silent_without_upstream(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """Vault has no remote configured — nothing to compare against, so
+    even a long stack of local commits must not trigger the warning."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+
+    outputs: list[str] = []
+    for i in range(6):
+        fake_editor.append(_append(f"body-{i}\n"))
+        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        assert result.exit_code == 0, result.output
+        outputs.append(result.output)
+
+    assert "unsynced commits" not in outputs[-1]
+
+
+def test_silent_when_upstream_ref_missing(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """A remote URL is configured but we've never fetched, so `@{u}` is
+    unresolvable. The hook must stay silent rather than crash."""
+    del freeze_now
+    # Seed one commit so HEAD exists, then point at a remote we never push to.
+    (vault / "README.md").write_text("seed\n", encoding="utf-8")
+    _git(vault, "add", "-A")
+    _git(vault, "commit", "--quiet", "-m", "seed")
+    _git(vault, "remote", "add", "origin", str(tmp_path / "nope.git"))
+    write_cfg(cfg_dir, vault)
+
+    outputs: list[str] = []
+    for i in range(6):
+        fake_editor.append(_append(f"body-{i}\n"))
+        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        assert result.exit_code == 0, result.output
+        outputs.append(result.output)
+
+    assert "unsynced commits" not in outputs[-1]

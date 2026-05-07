@@ -102,3 +102,28 @@ def pull_rebase_push(vault: pathlib.Path) -> None:
     """`git pull --rebase` then `git push`. Raises on either failure."""
     subprocess.run(["git", "pull", "--rebase"], cwd=vault, check=True)
     subprocess.run(["git", "push"], cwd=vault, check=True)
+
+
+def unsynced_commit_count(vault: pathlib.Path) -> int | None:
+    """Count commits on HEAD that are not on its upstream.
+
+    Returns None when there's nothing meaningful to compare against — no
+    HEAD yet, no upstream tracking branch configured, or the upstream
+    ref is missing locally (e.g. the user has never fetched). Returns 0
+    when HEAD is in sync with upstream, or a positive int otherwise.
+
+    Deliberately does not run `git fetch` — the caller is the post-command
+    hook, which must be silent and offline-safe.
+    """
+    if not has_head(vault):
+        return None
+    result = subprocess.run(
+        ["git", "rev-list", "--count", "@{u}..HEAD"],
+        cwd=vault,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    out = result.stdout.strip()
+    return int(out) if out.isdigit() else None
