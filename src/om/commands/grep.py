@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pathlib
 import shlex
-import shutil
 import subprocess
 
 import click
 
+from om import dependencies, fzf
 from om.config import (
     CONFIG_FILENAME,
     DEFAULT_CONFIG_DIR,
@@ -23,23 +23,11 @@ from om.config import (
 from om.editor import reopen
 from om.ui import OmError
 
-FZF_CANCELLED = 130
-
-
-def _check_rg() -> None:
-    if shutil.which("rg") is None:
-        raise OmError("ripgrep is required", hint="install via `brew install ripgrep`")
-
-
-def _check_fzf() -> None:
-    if shutil.which("fzf") is None:
-        raise OmError("fzf is required", hint="install via `brew install fzf`")
-
 
 def _preview_cmd() -> str:
     """Pick the preview renderer. fzf substitutes `{1}` for the path
     field and `{2}` for the line number — bat highlights that line."""
-    if shutil.which("bat") is not None:
+    if dependencies.BAT.is_available():
         return "bat --color=always --style=plain --language=markdown --highlight-line {2} {1}"
     return "cat {1}"
 
@@ -63,7 +51,7 @@ def _run_fzf(vault: pathlib.Path) -> str:
     """Run fzf with rg wired into change:reload. Returns the selected
     line (`path:line:col:text`) or `""` on cancel/no-selection."""
     cmd = [
-        "fzf",
+        *fzf.base_args("om-grep> ", header="enter: open at line  esc: cancel"),
         "--ansi",
         "--disabled",
         "--delimiter=:",
@@ -71,9 +59,6 @@ def _run_fzf(vault: pathlib.Path) -> str:
         f"--bind=change:reload:{_rg_reload_cmd(vault)}",
         f"--preview={_preview_cmd()}",
         "--preview-window=right:60%:+{2}-/2",
-        "--height=80%",
-        "--prompt=om-grep> ",
-        "--header=enter: open at line  esc: cancel",
     ]
     proc = subprocess.run(
         cmd,
@@ -82,15 +67,13 @@ def _run_fzf(vault: pathlib.Path) -> str:
         capture_output=True,
         check=False,
     )
-    if proc.returncode == FZF_CANCELLED:
+    if proc.returncode == fzf.CANCELLED_RETURNCODE:
         return ""
     return proc.stdout.strip()
 
 
 def run(vault: pathlib.Path, editor: str) -> None:
     """Run the grep picker against `vault`."""
-    _check_rg()
-    _check_fzf()
 
     selection = _run_fzf(vault)
     if not selection:

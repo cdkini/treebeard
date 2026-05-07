@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
+from om import dependencies as deps_mod
 from om.cli import cli
 from om.commands import find as find_mod
 from tests.conftest import EditorFake, write_cfg
@@ -31,7 +32,7 @@ def _seed_note(vault: pathlib.Path, name: str, title: str, body: str = "body\n")
 
 
 def _patch_fzf_present(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(find_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(deps_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
 
 
 def _patch_fzf(
@@ -60,7 +61,11 @@ def test_fails_when_fzf_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     write_cfg(cfg_dir, vault)
-    monkeypatch.setattr(find_mod.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        deps_mod.shutil,
+        "which",
+        lambda name: None if name == "fzf" else f"/usr/bin/{name}",
+    )
     result = runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
     assert result.exit_code != 0
     assert "fzf is required" in result.output
@@ -196,7 +201,7 @@ def test_preview_uses_configured_previewer(
     del freeze_now, fake_editor
     write_cfg(cfg_dir, vault, previewer="bat")
     _seed_note(vault, "foo.md", "foo")
-    monkeypatch.setattr(find_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+    _patch_fzf_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
     runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
@@ -289,9 +294,11 @@ def test_preview_falls_back_to_cat(
     _seed_note(vault, "foo.md", "foo")
 
     def which(name: str) -> str | None:
-        return "/usr/bin/fzf" if name == "fzf" else None
+        if name in {"fzf", "rg", "git", "vim"}:
+            return f"/usr/bin/{name}"
+        return None
 
-    monkeypatch.setattr(find_mod.shutil, "which", which)
+    monkeypatch.setattr(deps_mod.shutil, "which", which)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
     runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])

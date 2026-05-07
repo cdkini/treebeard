@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
-from om import ui
+from om import dependencies, ui
 from om.frontmatter import Frontmatter, split_document
 from om.post_edit import PostEditAbort, reconcile_filename
 from om.ui import OmError
@@ -34,6 +34,8 @@ def run_editor(editor: str, path: pathlib.Path, *, start_line: int | None = None
     `+<N>` lands it at line N. Pass `start_line` from grep-style callers
     that already know which line is interesting.
     """
+    dependencies.check_editor(editor)
+
     line_arg = f"+{start_line}" if start_line is not None else "+"
     try:
         subprocess.run([editor, line_arg, str(path)], check=True)

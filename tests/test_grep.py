@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
+from om import dependencies as deps_mod
 from om.cli import cli
 from om.commands import grep as grep_mod
 from tests.conftest import write_cfg
@@ -21,7 +22,7 @@ def _patch_binaries_present(monkeypatch: pytest.MonkeyPatch, *, with_bat: bool =
             return None
         return f"/usr/bin/{name}"
 
-    monkeypatch.setattr(grep_mod.shutil, "which", which)
+    monkeypatch.setattr(deps_mod.shutil, "which", which)
 
 
 def _patch_fzf(
@@ -49,7 +50,7 @@ def test_fails_when_rg_missing(
 ) -> None:
     write_cfg(cfg_dir, vault)
     monkeypatch.setattr(
-        grep_mod.shutil,
+        deps_mod.shutil,
         "which",
         lambda name: None if name == "rg" else f"/usr/bin/{name}",
     )
@@ -67,7 +68,7 @@ def test_fails_when_fzf_missing(
 ) -> None:
     write_cfg(cfg_dir, vault)
     monkeypatch.setattr(
-        grep_mod.shutil,
+        deps_mod.shutil,
         "which",
         lambda name: None if name == "fzf" else f"/usr/bin/{name}",
     )

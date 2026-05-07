@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pathlib
 import re
-import shutil
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -13,7 +12,7 @@ import click
 from rich.panel import Panel
 from rich.text import Text
 
-from om import git, ui
+from om import dependencies, git, ui
 from om.config import (
     CONFIG_FILENAME,
     DEFAULT_CONFIG_DIR,
@@ -180,7 +179,8 @@ def _prompt_vault_path() -> pathlib.Path:
 
 
 def _prompt_editor() -> str:
-    default = next((name for name in VALID_EDITORS if shutil.which(name)), None)
+    found = dependencies.first_available(dependencies.EDITORS)
+    default = found.name if found is not None else None
     return _ask_choice("Editor", VALID_EDITORS, default)
 
 
@@ -191,7 +191,8 @@ def _prompt_previewer() -> str:
     none are present (the runtime fallback in `find._preview_cmd` then
     degrades to `bat`/`cat` if the chosen tool is missing at use time).
     """
-    default = next((name for name in VALID_PREVIEWERS if shutil.which(name)), DEFAULT_PREVIEWER)
+    found = dependencies.first_available(dependencies.PREVIEWERS)
+    default = found.name if found is not None else DEFAULT_PREVIEWER
     return _ask_choice("Markdown previewer", VALID_PREVIEWERS, default)
 
 

@@ -11,14 +11,13 @@ Explicit `om find` shows every note by default; pass `--limit N` to cap.
 from __future__ import annotations
 
 import pathlib
-import shutil
 import subprocess
 import time
 from datetime import UTC, datetime
 
 import click
 
-from om import ui
+from om import dependencies, fzf, ui
 from om.commands.note import create_named_note, create_scratch
 from om.config import (
     CONFIG_FILENAME,
@@ -33,7 +32,6 @@ from om.ui import OmError
 from om.vault import list_recent_notes
 
 BARE_LIMIT = 20
-FZF_CANCELLED = 130
 TITLE_WIDTH = 30
 
 # fzf substitutes `{2}` with the path field for `om find`. Each command
@@ -49,11 +47,6 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
-def _check_fzf() -> None:
-    if shutil.which("fzf") is None:
-        raise OmError("fzf is required", hint="install via `brew install fzf`")
-
-
 def _preview_cmd(configured: str) -> str:
     """Pick the preview renderer.
 
@@ -63,7 +56,7 @@ def _preview_cmd(configured: str) -> str:
     """
     order = [configured, *(name for name in _PREVIEWER_COMMANDS if name != configured)]
     for name in order:
-        if shutil.which(name) is not None:
+        if dependencies.previewer(name).is_available():
             return _PREVIEWER_COMMANDS[name]
     return _PREVIEWER_COMMANDS["cat"]
 
@@ -111,14 +104,11 @@ def _run_fzf(lines: list[str], previewer: str) -> tuple[str, str, str]:
     treated as a cancel.
     """
     cmd = [
-        "fzf",
+        *fzf.base_args("om> ", header="enter: open  ctrl-n: new note"),
         "--delimiter=\t",
         "--with-nth=1",
         f"--preview={_preview_cmd(previewer)}",
         "--preview-window=right:60%",
-        "--height=80%",
-        "--prompt=om> ",
-        "--header=enter: open  ctrl-n: new note",
         "--expect=ctrl-n",
         "--print-query",
     ]
@@ -129,7 +119,7 @@ def _run_fzf(lines: list[str], previewer: str) -> tuple[str, str, str]:
         capture_output=True,
         check=False,
     )
-    if proc.returncode == FZF_CANCELLED:
+    if proc.returncode == fzf.CANCELLED_RETURNCODE:
         return ("", "", "")
     out_lines = proc.stdout.split("\n")
     query = out_lines[0] if len(out_lines) > 0 else ""
@@ -140,7 +130,6 @@ def _run_fzf(lines: list[str], previewer: str) -> tuple[str, str, str]:
 
 def run(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> None:
     """Run the picker against `vault`. Shared by `om find` and bare `om`."""
-    _check_fzf()
     paths = list_recent_notes(vault, limit)
     if not paths:
         ui.info("vault is empty — create a note with `om note <name>`")

@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from om import __version__, git
+from om import __version__, dependencies, git
 from om.commands import iter_commands
 from om.config import load_vault_path
 
@@ -70,6 +70,7 @@ def cli(ctx: click.Context) -> None:
     # Subcommands set ctx.obj["config_dir"] so the auto-commit hook
     # targets the same vault the command actually used.
     ctx.ensure_object(dict)
+    dependencies.check_all()
     ctx.call_on_close(lambda: _on_close(ctx))
 
     if ctx.invoked_subcommand is None:
