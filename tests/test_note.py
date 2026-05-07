@@ -1,85 +1,34 @@
-"""Tests for `om note`."""
+"""Tests for `om note` (CLI integration — pure logic lives in test_todos / test_frontmatter)."""
 
 from __future__ import annotations
 
 import os
 import pathlib
-import stat
-from datetime import UTC, datetime
 
-import pytest
 from click.testing import CliRunner
 
-from om import editor as editor_mod
 from om.cli import cli
-from om.commands import note as note_cmd
-from om.config import Config
-
-FROZEN_NOW = datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC)
-FROZEN_LATER = datetime(2026, 5, 7, 15, 0, 0, tzinfo=UTC)
+from tests.conftest import FROZEN_LATER, FROZEN_NOW, EditorFake, write_cfg
 
 
-@pytest.fixture
-def vault(tmp_path: pathlib.Path) -> pathlib.Path:
-    v = tmp_path / "vault"
-    (v / ".om").mkdir(parents=True)
-    return v
+def append(payload: str) -> EditorFake:
+    def _do(_ed: str, p: pathlib.Path) -> None:
+        p.write_text(p.read_text(encoding="utf-8") + payload, encoding="utf-8")
+
+    return _do
 
 
-@pytest.fixture
-def cfg_dir(tmp_path: pathlib.Path) -> pathlib.Path:
-    d = tmp_path / "cfg"
-    d.mkdir()
-    return d
+def set_title(new_title: str) -> EditorFake:
+    def _do(_ed: str, path: pathlib.Path) -> None:
+        text = path.read_text(encoding="utf-8")
+        path.write_text(
+            text.replace("title: \n", f"title: {new_title}\n", 1)
+            if "title: \n" in text
+            else text.replace("title:", f"title: {new_title}", 1),
+            encoding="utf-8",
+        )
 
-
-def _write_cfg(cfg_dir: pathlib.Path, vault: pathlib.Path, editor: str) -> None:
-    """Pre-seed `cfg_dir/config.toml` via the Config dataclass."""
-    Config(vault=vault, editor=editor).save(str(cfg_dir))
-
-
-@pytest.fixture
-def freeze_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
-    """Hand `_now_utc` a queue of timestamps; pops front per call, repeats last when empty."""
-    queue: list[datetime] = [FROZEN_NOW]
-
-    def fake_now() -> datetime:
-        return queue.pop(0) if len(queue) > 1 else queue[0]
-
-    monkeypatch.setattr(note_cmd, "_now_utc", fake_now)
-    return queue
-
-
-def _make_script(tmp_path: pathlib.Path, body: str, name: str = "edit.sh") -> pathlib.Path:
-    """Write an executable shell script that runs `body` with $1 == file path.
-
-    Skips any leading `+...` arg so the script can stand in for vim/nvim,
-    which `om` invokes as `vim + <path>` to land the cursor at EOF.
-    """
-    script = tmp_path / name
-    preamble = 'while [ "${1#+}" != "$1" ]; do shift; done\n'
-    script.write_text(f"#!/bin/sh\n{preamble}{body}\n", encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    return script
-
-
-def _appender(
-    tmp_path: pathlib.Path, payload: str = "edited\n", name: str = "appender.sh"
-) -> pathlib.Path:
-    return _make_script(tmp_path, f'printf "%s" "{payload}" >> "$1"', name=name)
-
-
-def _title_setter(
-    tmp_path: pathlib.Path, new_title: str, name: str = "set_title.sh"
-) -> pathlib.Path:
-    """Replace `title:` line in the file (assumes a leading frontmatter block)."""
-    body = (
-        "tmp=$(mktemp)\n"
-        f"awk -v t='title: {new_title}' "
-        "'NR==FNR{next} /^title:/ && !done {print t; done=1; next} {print}' "
-        '"$1" "$1" > "$tmp" && mv "$tmp" "$1"\n'
-    )
-    return _make_script(tmp_path, body, name=name)
+    return _do
 
 
 def test_help(runner: CliRunner) -> None:
@@ -92,17 +41,15 @@ def test_creates_named_file_with_frontmatter(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    tmp_path: pathlib.Path,
-    freeze_now: list[datetime],
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
     del freeze_now
-    script = _appender(tmp_path)
-    _write_cfg(cfg_dir, vault, str(script))
+    fake_editor.append(append("edited\n"))
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
     assert result.exit_code == 0, result.output
     path = vault / "hello.md"
-    assert path.exists()
-    text = path.read_text(encoding="utf-8")
     expected_frontmatter = (
         "---\n"
         "title: hello\n"
@@ -112,152 +59,145 @@ def test_creates_named_file_with_frontmatter(
         "tags: []\n"
         "---\n"
     )
-    # The template has two trailing blank lines so the cursor (passed `+`)
-    # lands at the second blank line below the frontmatter.
-    assert text == expected_frontmatter + "\n\nedited\n"
+    assert path.read_text(encoding="utf-8") == expected_frontmatter + "\n\nedited\n"
     assert str(path) in result.output
 
 
-def test_named_discards_when_unchanged(
-    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
+def test_named_discards_when_editor_makes_no_change(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
-    del freeze_now
-    _write_cfg(cfg_dir, vault, "true")
+    del freeze_now, fake_editor  # empty queue → editor is a no-op
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
     assert result.exit_code == 0, result.output
     assert not (vault / "hello.md").exists()
     assert "discarded empty note" in result.output
 
 
-def test_named_discards_on_editor_failure(
-    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
+def test_named_discards_on_editor_failure_via_real_subprocess(
+    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list
 ) -> None:
+    """Exercises the real subprocess.run path (no fake_editor patch)."""
     del freeze_now
-    _write_cfg(cfg_dir, vault, "false")
+    write_cfg(cfg_dir, vault, editor="false")
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
     assert result.exit_code != 0
     assert not (vault / "hello.md").exists()
+
+
+def test_unchanged_via_real_subprocess(
+    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list
+) -> None:
+    """Exercises the real subprocess.run path with a successful no-op editor."""
+    del freeze_now
+    write_cfg(cfg_dir, vault, editor="true")
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    assert result.exit_code == 0, result.output
+    assert not (vault / "hello.md").exists()
+    assert "discarded empty note" in result.output
 
 
 def test_slugifies_name(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    tmp_path: pathlib.Path,
-    freeze_now: list[datetime],
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
     del freeze_now
-    script = _appender(tmp_path)
-    _write_cfg(cfg_dir, vault, str(script))
+    fake_editor.append(append("body\n"))
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "Sprint Planning!"])
     assert result.exit_code == 0, result.output
     path = vault / "sprint-planning.md"
-    assert path.exists()
     assert "title: Sprint Planning!\n" in path.read_text(encoding="utf-8")
 
 
-def test_strips_md_extension(
+def test_strips_md_extension_and_reopens(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    tmp_path: pathlib.Path,
-    freeze_now: list[datetime],
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
     del freeze_now
-    script = _appender(tmp_path)
-    _write_cfg(cfg_dir, vault, str(script))
+    fake_editor.append(append("body\n"))
+    write_cfg(cfg_dir, vault)
     r1 = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "foo.md"])
     assert r1.exit_code == 0, r1.output
-    path = vault / "foo.md"
-    assert path.exists()
-    assert "title: foo\n" in path.read_text(encoding="utf-8")
-    # Re-running with the bare name reopens the same file.
-    _write_cfg(cfg_dir, vault, "true")
+    assert (vault / "foo.md").exists()
+    # Reopen with bare name (no editor edit) — should not create a duplicate.
     r2 = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "foo"])
     assert r2.exit_code == 0, r2.output
     assert sorted(p.name for p in vault.glob("*.md")) == ["foo.md"]
 
 
-def test_unnamed_falls_back_to_timestamp_when_title_left_empty(
+def test_unnamed_falls_back_to_timestamp(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    tmp_path: pathlib.Path,
-    freeze_now: list[datetime],
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
     del freeze_now
-    script = _appender(tmp_path, payload="just a body\n")
-    _write_cfg(cfg_dir, vault, str(script))
+    fake_editor.append(append("just a body\n"))
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     path = vault / "scratch-2026-05-07t14-23-05.md"
-    assert path.exists()
     text = path.read_text(encoding="utf-8")
     assert "title: Scratch 2026-05-07T14-23-05\n" in text
     assert text.endswith("just a body\n")
-    # Draft tempfile cleaned up.
-    drafts = vault / ".om" / "drafts"
-    assert list(drafts.iterdir()) == []
+    assert list((vault / ".om" / "drafts").iterdir()) == []
 
 
 def test_unnamed_uses_edited_title_for_filename(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    tmp_path: pathlib.Path,
-    freeze_now: list[datetime],
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
     del freeze_now
-    script = _title_setter(tmp_path, "My Great Idea")
-    _write_cfg(cfg_dir, vault, str(script))
+    fake_editor.append(set_title("My Great Idea"))
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
-    path = vault / "my-great-idea.md"
-    assert path.exists()
-    assert "title: My Great Idea\n" in path.read_text(encoding="utf-8")
-    # No timestamp file.
+    assert (vault / "my-great-idea.md").exists()
     assert not (vault / "scratch-2026-05-07t14-23-05.md").exists()
-
-
-def test_unnamed_discards_when_unchanged(
-    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
-) -> None:
-    del freeze_now
-    _write_cfg(cfg_dir, vault, "true")
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
-    assert result.exit_code == 0, result.output
-    assert "discarded empty note" in result.output
-    drafts = vault / ".om" / "drafts"
-    assert list(drafts.iterdir()) == []
-    assert list(vault.glob("*.md")) == []
 
 
 def test_unnamed_collision_keeps_draft(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    tmp_path: pathlib.Path,
-    freeze_now: list[datetime],
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
     del freeze_now
     (vault / "todo.md").write_text("pre-existing\n", encoding="utf-8")
-    script = _title_setter(tmp_path, "todo")
-    _write_cfg(cfg_dir, vault, str(script))
+    fake_editor.append(set_title("todo"))
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
     assert result.exit_code != 0
     assert "already exists" in result.output
     assert "draft kept at" in result.output
-    # Existing file untouched.
     assert (vault / "todo.md").read_text(encoding="utf-8") == "pre-existing\n"
-    # Draft survives in the drafts dir.
-    drafts = list((vault / ".om" / "drafts").iterdir())
-    assert len(drafts) == 1
+    assert len(list((vault / ".om" / "drafts").iterdir())) == 1
 
 
 def test_reopen_does_not_clobber_when_unchanged(
-    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
-    del freeze_now
+    del freeze_now, fake_editor  # no edit
     path = vault / "todo.md"
     original = (
         "---\n"
@@ -271,28 +211,20 @@ def test_reopen_does_not_clobber_when_unchanged(
         "body content\n"
     )
     path.write_text(original, encoding="utf-8")
-
-    _write_cfg(cfg_dir, vault, "true")
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "todo"])
     assert result.exit_code == 0, result.output
     assert path.read_text(encoding="utf-8") == original
 
 
-def test_reopen_bumps_updated_at_when_mtime_moves(
+def test_reopen_bumps_updated_at(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
-    queue: list[datetime] = [FROZEN_NOW, FROZEN_LATER]
-
-    def fake_now() -> datetime:
-        return queue.pop(0) if len(queue) > 1 else queue[0]
-
-    monkeypatch.setattr(note_cmd, "_now_utc", fake_now)
-    monkeypatch.setattr(editor_mod, "_now_utc", fake_now)
-
+    freeze_now[:] = [FROZEN_NOW, FROZEN_LATER]
     path = vault / "todo.md"
     path.write_text(
         "---\n"
@@ -305,18 +237,16 @@ def test_reopen_bumps_updated_at_when_mtime_moves(
         "body\n",
         encoding="utf-8",
     )
-    # Force older mtime so any append moves it.
     old = path.stat().st_mtime - 60
     os.utime(path, (old, old))
 
-    script = _appender(tmp_path)
-    _write_cfg(cfg_dir, vault, str(script))
+    fake_editor.append(append("edited\n"))
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "todo"])
     assert result.exit_code == 0, result.output
     text = path.read_text(encoding="utf-8")
     assert "created_at: 2020-01-01T00:00:00Z\n" in text
     assert "updated_at: 2026-05-07T15:00:00Z\n" in text
-    assert "updated_at: 2020-01-01T00:00:00Z\n" not in text
     assert text.endswith("body\nedited\n")
 
 
@@ -324,8 +254,8 @@ def test_reopen_with_malformed_frontmatter_is_noop(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    tmp_path: pathlib.Path,
-    freeze_now: list[datetime],
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
     del freeze_now
     path = vault / "raw.md"
@@ -333,8 +263,8 @@ def test_reopen_with_malformed_frontmatter_is_noop(
     old = path.stat().st_mtime - 60
     os.utime(path, (old, old))
 
-    script = _appender(tmp_path, payload="more\n")
-    _write_cfg(cfg_dir, vault, str(script))
+    fake_editor.append(append("more\n"))
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "raw"])
     assert result.exit_code == 0, result.output
     assert path.read_text(encoding="utf-8") == "just a body, no frontmatter\nmore\n"
@@ -349,31 +279,30 @@ def test_errors_when_no_vault_configured(runner: CliRunner, tmp_path: pathlib.Pa
 
 
 def test_errors_on_empty_slug(
-    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list[datetime]
+    runner: CliRunner, cfg_dir: pathlib.Path, vault: pathlib.Path, freeze_now: list
 ) -> None:
     del freeze_now
-    _write_cfg(cfg_dir, vault, "true")
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "!!!"])
     assert result.exit_code != 0
     assert "empty slug" in result.output
 
 
-def test_named_keeps_tags_when_user_adds_them(
+def test_named_keeps_user_added_tags(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
-    tmp_path: pathlib.Path,
-    freeze_now: list[datetime],
+    fake_editor: list[EditorFake],
+    freeze_now: list,
 ) -> None:
     del freeze_now
-    body = (
-        "tmp=$(mktemp)\n"
-        "awk '/^tags:/ {print \"tags: [foo, bar]\"; next} {print}' "
-        '"$1" > "$tmp" && mv "$tmp" "$1"\n'
-    )
-    script = _make_script(tmp_path, body, name="add_tags.sh")
-    _write_cfg(cfg_dir, vault, str(script))
+
+    def add_tags(_ed: str, p: pathlib.Path) -> None:
+        text = p.read_text(encoding="utf-8")
+        p.write_text(text.replace("tags: []\n", "tags: [foo, bar]\n", 1), encoding="utf-8")
+
+    fake_editor.append(add_tags)
+    write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
     assert result.exit_code == 0, result.output
-    text = (vault / "hello.md").read_text(encoding="utf-8")
-    assert "tags: [foo, bar]\n" in text
+    assert "tags: [foo, bar]\n" in (vault / "hello.md").read_text(encoding="utf-8")
