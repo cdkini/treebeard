@@ -129,7 +129,7 @@ def run_repl(vault: pathlib.Path) -> None:
 async def _repl_async(vault: pathlib.Path) -> None:
     started_at = _now_utc()
     transcript = conversation_path(vault, started_at)
-    out = Console(highlight=False, soft_wrap=True)
+    out = Console(highlight=False)
 
     _render_header(vault, transcript)
 
