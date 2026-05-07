@@ -170,7 +170,7 @@ def _setup_upstream(vault: pathlib.Path, tmp_path: pathlib.Path) -> pathlib.Path
     return bare
 
 
-def test_warns_when_five_or_more_unsynced(
+def test_warns_at_default_threshold(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
@@ -182,16 +182,17 @@ def test_warns_when_five_or_more_unsynced(
     _setup_upstream(vault, tmp_path)
     write_cfg(cfg_dir, vault)
 
-    # Each `om note` produces exactly one auto-commit; five of them puts
-    # us at the threshold. The fifth invocation should print the warning.
+    # Each `om note` produces exactly one auto-commit; ten of them
+    # puts us at the default threshold. The tenth invocation should
+    # print the warning.
     outputs: list[str] = []
-    for i in range(5):
+    for i in range(10):
         fake_editor.append(_append(f"body-{i}\n"))
         result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
         assert result.exit_code == 0, result.output
         outputs.append(result.output)
 
-    assert "5 unsynced commits" in outputs[-1]
+    assert "10 unsynced commits" in outputs[-1]
     assert "om sync" in outputs[-1]
 
 
@@ -208,13 +209,37 @@ def test_no_warning_below_threshold(
     write_cfg(cfg_dir, vault)
 
     outputs: list[str] = []
-    for i in range(4):
+    for i in range(9):
         fake_editor.append(_append(f"body-{i}\n"))
         result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
         assert result.exit_code == 0, result.output
         outputs.append(result.output)
 
     assert "unsynced commits" not in outputs[-1]
+
+
+def test_threshold_is_configurable(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    tmp_path: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """A user-set `sync_warn_threshold` overrides the default of 10."""
+    del freeze_now
+    _setup_upstream(vault, tmp_path)
+    write_cfg(cfg_dir, vault, sync_warn_threshold=3)
+
+    outputs: list[str] = []
+    for i in range(3):
+        fake_editor.append(_append(f"body-{i}\n"))
+        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        assert result.exit_code == 0, result.output
+        outputs.append(result.output)
+
+    assert "unsynced commits" not in outputs[-2]
+    assert "3 unsynced commits" in outputs[-1]
 
 
 def test_silent_without_upstream(
@@ -230,7 +255,7 @@ def test_silent_without_upstream(
     write_cfg(cfg_dir, vault)
 
     outputs: list[str] = []
-    for i in range(6):
+    for i in range(11):
         fake_editor.append(_append(f"body-{i}\n"))
         result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
         assert result.exit_code == 0, result.output
@@ -258,7 +283,7 @@ def test_silent_when_upstream_ref_missing(
     write_cfg(cfg_dir, vault)
 
     outputs: list[str] = []
-    for i in range(6):
+    for i in range(11):
         fake_editor.append(_append(f"body-{i}\n"))
         result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
         assert result.exit_code == 0, result.output

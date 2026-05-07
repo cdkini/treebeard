@@ -18,11 +18,9 @@ from rich.text import Text
 
 from om import __version__, dependencies, editor, git, ui
 from om.commands import iter_commands
-from om.config import load_vault_path
+from om.config import load_sync_warn_threshold, load_vault_path
 from om.editor import apply_post_edit
 from om.post_edit import PostEditAbort
-
-UNSYNCED_WARN_THRESHOLD = 5
 
 
 class RichGroup(click.Group):
@@ -113,9 +111,9 @@ def _run_post_edit_hooks(vault: pathlib.Path) -> None:
 
 def _on_close(ctx: click.Context) -> None:
     """Run the post-edit sweep, auto-commit any working-tree changes left
-    by the subcommand, then warn if local commits have piled up past
-    `UNSYNCED_WARN_THRESHOLD`. No-ops when no subcommand ran (e.g.
-    `om --help`).
+    by the subcommand, then warn if local commits have piled up past the
+    configured `sync_warn_threshold`. No-ops when no subcommand ran
+    (e.g. `om --help`).
 
     Order matters: the sweep may rename files and bump `updated_at`, and
     those changes need to land in the same commit as the user's edits.
@@ -124,7 +122,8 @@ def _on_close(ctx: click.Context) -> None:
     if sub is None:
         return
     try:
-        vault = load_vault_path(ctx.obj.get("config_dir"))
+        config_dir = ctx.obj.get("config_dir")
+        vault = load_vault_path(config_dir)
         if vault is None or not (vault / ".git").is_dir():
             return
         _run_post_edit_hooks(vault)
@@ -133,7 +132,8 @@ def _on_close(ctx: click.Context) -> None:
             git.commit_all(vault, f"{sub}: {ts}")
 
         ahead = git.unsynced_commit_count(vault)
-        if ahead is not None and ahead >= UNSYNCED_WARN_THRESHOLD:
+        threshold = load_sync_warn_threshold(config_dir)
+        if ahead is not None and ahead >= threshold:
             ui.warn(f"{ahead} unsynced commits — run [bold]om sync[/bold] to push to remote.")
     except Exception:
         return

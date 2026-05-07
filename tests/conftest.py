@@ -80,6 +80,7 @@ def write_cfg(
     editor: str = "vim",
     previewer: str = "bat",
     chat_model: str = "sonnet",
+    sync_warn_threshold: int = 10,
 ) -> None:
     """Pre-seed `cfg_dir/config.toml` for tests."""
     Config(
@@ -87,6 +88,7 @@ def write_cfg(
         editor=editor,
         previewer=previewer,
         chat_model=chat_model,
+        sync_warn_threshold=sync_warn_threshold,
     ).save(str(cfg_dir))
 
 

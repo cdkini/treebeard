@@ -18,39 +18,18 @@ def _read_toml(path: pathlib.Path) -> dict[str, object]:
         return dict(tomllib.load(fh))
 
 
-def _read_git_config(vault: pathlib.Path, key: str) -> str:
-    return subprocess.run(
-        ["git", "config", "--get", key],
-        cwd=vault,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-
 @pytest.fixture(autouse=True)
-def _stable_editor_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pin `shutil.which` so the editor prompt's default doesn't depend
-    on what's installed on the host running the tests."""
+def _stable_dependency_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin `shutil.which` so the auto-picked editor/previewer defaults
+    don't depend on what's installed on the host running the tests."""
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
-
-
-# Inputs to the init prompt sequence: editor, previewer, chat model, email,
-# name, remote. The two identity prompts are blank-Entered so they accept the
-# global default from `_isolated_git_global`. Remote is blank to skip.
-# Tests prepend the vault path before this tail.
-_DEFAULT_TAIL = "vim\nbat\nsonnet\n\n\n\n"
 
 
 def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     vault = tmp_path / "vault"
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     assert (vault / ".om").is_dir()
@@ -59,53 +38,47 @@ def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     assert f"Wrote config to {cfg_dir / 'config.toml'}" in result.output
 
     data = _read_toml(cfg_dir / "config.toml")
+    # Editor/previewer pick the first available from the dependency
+    # registry (`nvim`, `bat`); `_stable_dependency_defaults` pins
+    # `shutil.which` to make both look installed.
     assert data == {
         "vault": str(vault),
-        "editor": "vim",
+        "editor": "nvim",
         "previewer": "bat",
         "chat_model": "sonnet",
+        "sync_warn_threshold": 10,
     }
 
 
-def test_persists_chosen_editor(runner: CliRunner, tmp_path: pathlib.Path) -> None:
+def test_falls_back_to_constants_when_nothing_installed(
+    runner: CliRunner, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When no editor/previewer is on PATH, the config.toml falls back
+    to the hardcoded `DEFAULT_EDITOR`/`DEFAULT_PREVIEWER` constants.
+
+    Patches `first_available` directly rather than `shutil.which` so the
+    CLI startup dependency check (which also calls `which`) doesn't
+    spuriously fail looking for git/fzf/rg.
+    """
+    from om import dependencies
+
+    monkeypatch.setattr(dependencies, "first_available", lambda _deps: None)
     vault = tmp_path / "vault"
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nnvim\nbat\nsonnet\n\n\n\n",
-    )
+    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     data = _read_toml(cfg_dir / "config.toml")
-    assert data["editor"] == "nvim"
-
-
-def test_persists_chosen_previewer(runner: CliRunner, tmp_path: pathlib.Path) -> None:
-    vault = tmp_path / "vault"
-    cfg_dir = tmp_path / "cfg"
-
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nvim\nglow\nsonnet\n\n\n\n",
-    )
-
-    assert result.exit_code == 0, result.output
-    data = _read_toml(cfg_dir / "config.toml")
-    assert data["previewer"] == "glow"
+    assert data["editor"] == "vim"
+    assert data["previewer"] == "bat"
 
 
 def test_creates_missing_parents(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     nested = tmp_path / "a" / "b" / "c" / "vault"
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{nested}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(nested), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     assert (nested / ".om").is_dir()
@@ -117,11 +90,7 @@ def test_accepts_empty_existing_dir(runner: CliRunner, tmp_path: pathlib.Path) -
     vault.mkdir()
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     assert (vault / ".om").is_dir()
@@ -136,11 +105,7 @@ def test_adopts_existing_full_vault(runner: CliRunner, tmp_path: pathlib.Path) -
     (vault / "note.md").write_text("preexisting\n", encoding="utf-8")
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     assert f"Adopted existing vault at {vault}" in result.output
@@ -150,68 +115,35 @@ def test_adopts_existing_full_vault(runner: CliRunner, tmp_path: pathlib.Path) -
 def test_rejects_om_without_git(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     half = tmp_path / "half"
     (half / ".om").mkdir(parents=True)
-    good = tmp_path / "good"
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{half}\n{good}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(half), "--config-dir", str(cfg_dir)])
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code != 0
     assert f"{half} has .om/ but no .git/" in result.output
-    assert (good / ".om").is_dir()
 
 
 def test_rejects_non_empty_non_vault_dir(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     messy = tmp_path / "messy"
     messy.mkdir()
     (messy / "random.txt").write_text("hi", encoding="utf-8")
-    good = tmp_path / "good"
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{messy}\n{good}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(messy), "--config-dir", str(cfg_dir)])
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code != 0
     assert "is not empty and is not an om vault" in result.output
-    assert (good / ".om").is_dir()
 
 
 def test_rejects_when_path_is_a_file(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     notvault = tmp_path / "notvault"
     notvault.write_text("oops", encoding="utf-8")
-    good = tmp_path / "good"
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{notvault}\n{good}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(notvault), "--config-dir", str(cfg_dir)])
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code != 0
     assert f"{notvault} is not a directory" in result.output
-    assert (good / ".om").is_dir()
-
-
-def test_rejects_invalid_editor_then_accepts(runner: CliRunner, tmp_path: pathlib.Path) -> None:
-    vault = tmp_path / "vault"
-    cfg_dir = tmp_path / "cfg"
-
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nemacs\nvim\nbat\nsonnet\n\n\n\n",
-    )
-
-    assert result.exit_code == 0, result.output
-    data = _read_toml(cfg_dir / "config.toml")
-    assert data["editor"] == "vim"
 
 
 def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: pathlib.Path) -> None:
@@ -221,11 +153,7 @@ def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: pathl
     cfg_path.write_text('vault = "/some/old/place"\neditor = "vim"\n', encoding="utf-8")
 
     vault = tmp_path / "vault"
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code != 0
     assert "already configured" in result.output
@@ -241,21 +169,12 @@ def test_tilde_expansion_uses_home_env(
     monkeypatch.setenv("HOME", str(fake_home))
 
     cfg_dir = tmp_path / "cfg"
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"~/vault\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", "~/vault", "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     assert (fake_home / "vault" / ".om").is_dir()
     data = _read_toml(cfg_dir / "config.toml")
-    assert data == {
-        "vault": str(fake_home / "vault"),
-        "editor": "vim",
-        "previewer": "bat",
-        "chat_model": "sonnet",
-    }
+    assert data["vault"] == str(fake_home / "vault")
 
 
 def test_relative_path_is_stored_absolute(
@@ -266,11 +185,7 @@ def test_relative_path_is_stored_absolute(
 
     # Use `./vault` rather than bare `vault`: validation rejects bare
     # tokens with no separator to catch typos like `asdfasdf`.
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"./vault\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", "./vault", "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     data = _read_toml(cfg_dir / "config.toml")
@@ -280,71 +195,38 @@ def test_relative_path_is_stored_absolute(
     assert pathlib.Path(stored) == (tmp_path / "vault").resolve()
 
 
-def test_rejects_bare_token_then_accepts_path(
+def test_rejects_bare_token(
     runner: CliRunner, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Bare `asdfasdf` (no `/` and no `~`) is almost always a typo —
-    surface the error and re-prompt instead of silently accepting it as
-    a relative path."""
+    surface the error instead of silently treating it as a relative path."""
     monkeypatch.chdir(tmp_path)
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"asdfasdf\n./vault\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", "asdfasdf", "--config-dir", str(cfg_dir)])
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code != 0
     assert "doesn't look like a path" in result.output
-    assert (tmp_path / "vault" / ".om").is_dir()
 
 
-def test_writes_git_identity_to_repo(runner: CliRunner, tmp_path: pathlib.Path) -> None:
+def test_inherits_global_git_identity(runner: CliRunner, tmp_path: pathlib.Path) -> None:
+    """Init no longer prompts for git identity; commits should still
+    succeed using whatever the global git config provides (set up by
+    the `_isolated_git_global` autouse fixture)."""
     vault = tmp_path / "vault"
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nvim\nbat\nsonnet\nme@example.com\nMe\n\n",
-    )
+    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
-    assert _read_git_config(vault, "user.email") == "me@example.com"
-    assert _read_git_config(vault, "user.name") == "Me"
-
-
-def test_adds_remote_when_url_provided(runner: CliRunner, tmp_path: pathlib.Path) -> None:
-    vault = tmp_path / "vault"
-    cfg_dir = tmp_path / "cfg"
-    remote_url = "git@example.com:me/notes.git"
-
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\nvim\nbat\nsonnet\n\n\n{remote_url}\n",
-    )
-
-    assert result.exit_code == 0, result.output
-    assert _read_git_config(vault, "remote.origin.url") == remote_url
-
-
-def test_skips_remote_when_blank(runner: CliRunner, tmp_path: pathlib.Path) -> None:
-    vault = tmp_path / "vault"
-    cfg_dir = tmp_path / "cfg"
-
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\n{_DEFAULT_TAIL}",
-    )
-
-    assert result.exit_code == 0, result.output
-    remotes = subprocess.run(
-        ["git", "remote"], cwd=vault, check=True, capture_output=True, text=True
-    ).stdout
-    assert remotes.strip() == ""
+    log = subprocess.run(
+        ["git", "log", "-1", "--format=%an <%ae>"],
+        cwd=vault,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert log == "Test User <test@example.com>"
 
 
 def _commit_count(vault: pathlib.Path) -> int:
@@ -374,11 +256,7 @@ def test_creates_initial_commit_on_fresh_vault(runner: CliRunner, tmp_path: path
     vault = tmp_path / "vault"
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     assert _commit_count(vault) == 1
@@ -396,11 +274,7 @@ def test_adopts_uncommitted_files_into_initial_commit(
     (vault / "note.md").write_text("preexisting\n", encoding="utf-8")
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     assert _commit_count(vault) == 1
@@ -433,11 +307,7 @@ def test_does_not_recommit_when_adopting_repo_with_history(
     subprocess.run(["git", "commit", "--quiet", "-m", "preexisting"], cwd=vault, check=True)
     cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(
-        cli,
-        ["init", "--config-dir", str(cfg_dir)],
-        input=f"{vault}\n{_DEFAULT_TAIL}",
-    )
+    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
     assert _commit_count(vault) == 1
