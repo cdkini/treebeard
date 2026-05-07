@@ -73,22 +73,25 @@ def create_named_note(
 ) -> pathlib.Path:
     """Create `vault/{slug}.md` with frontmatter and open the editor.
 
-    Returns the final path (post-rename, since `edit_with_initial` may
-    rename the file if the user changed the title in the editor).
+    Returns the seed path. The file may be renamed later by the close
+    hook's post-edit sweep if the user changed the title.
     """
     path = vault / f"{slug}.md"
     fm = Frontmatter.new(title, now)
     if tags:
         fm.tags = list(tags)
-    return edit_with_initial(path, fm.serialize() + "\n\n", editor)
+    edit_with_initial(path, fm.serialize() + "\n\n", editor)
+    return path
 
 
 def create_scratch(vault: pathlib.Path, now: datetime, editor: str) -> pathlib.Path:
     """Create `vault/scratch-<timestamp>.md` and open the editor.
 
-    On close, the rename hook will move the file to a slugified-title
-    name if the user filled in a title; otherwise it stays as scratch.
+    On close, the post-edit sweep will rename the file to a
+    slugified-title name if the user filled in a title; otherwise it
+    stays as scratch.
     """
     path = vault / scratch_filename(now)
     fm = Frontmatter.new("", now)
-    return edit_with_initial(path, fm.serialize() + "\n\n", editor)
+    edit_with_initial(path, fm.serialize() + "\n\n", editor)
+    return path

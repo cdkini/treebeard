@@ -1,25 +1,27 @@
-"""Editor invocation and the write-edit-rewrite lifecycle for note files.
+"""Editor invocation and per-file mutation helpers for note files.
 
 Reusable across commands that drop the user into an editor on a markdown
 file with frontmatter. Keeps the per-command modules thin.
 
-The `edit_atomically` context manager wraps every edit so post-edit
-invariants can revert the file from a snapshot by raising
-`PostEditAbort`. v1 invariant: title-canonical filenames (see
-`om.post_edit.reconcile_filename`).
+Post-edit work (bumping `updated_at`, reconciling the filename against
+the title) is *not* done here — `cli._on_close` runs a porcelain-based
+sweep over the vault after every subcommand and applies post-edit to
+every dirty `.md` at the vault root, including files the user
+side-jumped to via wikilinks / `:e` / `gf`. The `apply_post_edit` free
+function below is what the close hook calls per file; it's exposed here
+because its body lives next to the editor invocation it pairs with.
 """
 
 from __future__ import annotations
 
 import pathlib
 import subprocess
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from om import dependencies, ui
 from om.frontmatter import Frontmatter, split_document
-from om.post_edit import PostEditAbort, reconcile_filename
+from om.post_edit import reconcile_filename
 from om.ui import OmError
 
 
@@ -57,33 +59,23 @@ def rewrite_with(path: pathlib.Path, contents: str, mutate: Callable[[Frontmatte
     path.write_text(fm.serialize() + body, encoding="utf-8")
 
 
-@contextmanager
-def edit_atomically(path: pathlib.Path) -> Iterator[list[bool]]:
-    """Snapshot `path` on entry; on `PostEditAbort`, restore and echo.
+def apply_post_edit(path: pathlib.Path, *, now: datetime) -> pathlib.Path:
+    """Bump `updated_at` and reconcile the filename against the title.
 
-    Any post-edit step inside the block can raise `PostEditAbort` to
-    signal that the edit violated an invariant. The wrapper restores the
-    pre-edit state and prints a user-facing message — the editor has
-    already exited at this point.
+    Returns the final path (possibly renamed by `reconcile_filename`).
+    Re-raises `PostEditAbort` so the caller (the CLI close hook) can warn
+    and continue rather than aborting the whole sweep on one bad file.
 
-    Yields a single-element list whose value flips to `True` when an
-    abort happened, so callers can suppress success output.
-
-    Invariant for v1: post-edit steps that *rename* the file must run
-    last and must raise *before* the rename when they want to abort.
-    Otherwise the snapshot/path pair won't match what's on disk.
+    No-op when the file has no parseable frontmatter (`rewrite_with`
+    short-circuits) — `reconcile_filename` has the same property.
     """
-    snapshot = path.read_bytes() if path.exists() else None
-    aborted = [False]
-    try:
-        yield aborted
-    except PostEditAbort as exc:
-        aborted[0] = True
-        if snapshot is None:
-            path.unlink(missing_ok=True)
-        else:
-            path.write_bytes(snapshot)
-        ui.warn(f"edit reverted: {exc}")
+    contents = path.read_text(encoding="utf-8")
+
+    def bump(fm: Frontmatter) -> None:
+        fm.updated_at = now
+
+    rewrite_with(path, contents, mutate=bump)
+    return reconcile_filename(path, now=now)
 
 
 def edit_with_initial(
@@ -92,60 +84,34 @@ def edit_with_initial(
     editor: str,
     *,
     keep_when_unchanged: bool = False,
-) -> pathlib.Path:
+) -> None:
     """Seed `path` with `initial`, run the editor, then either discard
-    (when the user didn't touch the file) or re-serialize the frontmatter
-    and reconcile the filename against the title.
+    (when the user didn't touch the file) or leave the file in place for
+    the close hook's post-edit sweep to bump and reconcile.
 
     `keep_when_unchanged=True` skips the discard step — useful when the
     seeded content is already meaningful (e.g., daily carry-forward).
 
-    Returns the final path (possibly renamed by `reconcile_filename`).
+    On editor failure, the half-created file is unlinked and the error
+    propagates.
     """
-    final_path = path
-    discarded = False
-    with edit_atomically(path) as aborted:
-        path.write_text(initial, encoding="utf-8")
-        try:
-            run_editor(editor, path)
-        except OmError:
-            path.unlink(missing_ok=True)
-            raise
+    path.write_text(initial, encoding="utf-8")
+    try:
+        run_editor(editor, path)
+    except OmError:
+        path.unlink(missing_ok=True)
+        raise
 
-        contents = path.read_text(encoding="utf-8")
-        if contents == initial and not keep_when_unchanged:
-            path.unlink()
-            ui.info(f"discarded empty note: {path}")
-            discarded = True
-        else:
-            rewrite_with(path, contents, mutate=lambda fm: None)
-            final_path = reconcile_filename(path, now=_now_utc())
-    if not aborted[0] and not discarded:
-        ui.path(str(final_path))
-    return final_path
+    contents = path.read_text(encoding="utf-8")
+    if contents == initial and not keep_when_unchanged:
+        path.unlink()
+        ui.info(f"discarded empty note: {path}")
 
 
-def reopen(path: pathlib.Path, editor: str, *, start_line: int | None = None) -> pathlib.Path:
-    """Reopen an existing note. Bumps `updated_at` only if the user
-    actually changed the file during the edit, then reconciles the
-    filename against the title.
+def reopen(path: pathlib.Path, editor: str, *, start_line: int | None = None) -> None:
+    """Reopen an existing note in the editor.
 
-    Returns the final path (possibly renamed).
+    Thin wrapper around `run_editor` — bumping `updated_at` and
+    reconciling the filename is now the close hook's job.
     """
-    mtime_before = path.stat().st_mtime_ns
-    final_path = path
-    with edit_atomically(path) as aborted:
-        run_editor(editor, path, start_line=start_line)
-        mtime_after = path.stat().st_mtime_ns
-        if mtime_after != mtime_before:
-            contents = path.read_text(encoding="utf-8")
-            bump_ts = _now_utc()
-
-            def bump(fm: Frontmatter) -> None:
-                fm.updated_at = bump_ts
-
-            rewrite_with(path, contents, mutate=bump)
-            final_path = reconcile_filename(path, now=bump_ts)
-    if not aborted[0]:
-        ui.path(str(final_path))
-    return final_path
+    run_editor(editor, path, start_line=start_line)

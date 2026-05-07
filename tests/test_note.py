@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import subprocess
 
 from click.testing import CliRunner
 
@@ -172,25 +173,30 @@ def test_unnamed_renames_to_slug_when_title_added(
     assert not (vault / "scratch-2026-05-07t14-23-05.md").exists()
 
 
-def test_unnamed_collision_reverts(
+def test_unnamed_collision_warns_and_keeps(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """User titles a scratch with a name that collides → revert; existing file untouched."""
+    """User titles a scratch with a name that collides → warn; the
+    scratch stays on disk with the colliding title in frontmatter, and
+    the existing file is untouched. The user's edits are not lost
+    (improvement over the old revert-and-delete behavior — they can fix
+    the title without redoing their work)."""
     del freeze_now
     (vault / "todo.md").write_text("pre-existing\n", encoding="utf-8")
     fake_editor.append(set_title("todo"))
     write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
-    assert "edit reverted" in result.output
-    assert "todo.md" in result.output
+    assert "could not reconcile" in result.output
+    assert "would rename to todo.md but it exists" in result.output
     assert (vault / "todo.md").read_text(encoding="utf-8") == "pre-existing\n"
-    # The scratch file was deleted on revert (snapshot was None — file didn't exist before).
-    assert not (vault / "scratch-2026-05-07t14-23-05.md").exists()
+    scratch = vault / "scratch-2026-05-07t14-23-05.md"
+    assert scratch.exists()
+    assert "title: todo\n" in scratch.read_text(encoding="utf-8")
 
 
 def test_reopen_does_not_clobber_when_unchanged(
@@ -200,11 +206,18 @@ def test_reopen_does_not_clobber_when_unchanged(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
+    """No editor edit → reopen leaves the file alone.
+
+    The post-edit close hook still runs `apply_post_edit` on every file
+    porcelain reports as dirty. The seed file gets committed before the
+    invocation, so porcelain reports nothing dirty, and the contents
+    survive byte-for-byte.
+    """
     del freeze_now, fake_editor  # no edit
     path = vault / "todo.md"
     original = (
         "---\n"
-        "title: My Todo\n"
+        "title: todo\n"
         "source: user\n"
         "created_at: 2020-01-01T00:00:00Z\n"
         "updated_at: 2020-01-01T00:00:00Z\n"
@@ -214,6 +227,8 @@ def test_reopen_does_not_clobber_when_unchanged(
         "body content\n"
     )
     path.write_text(original, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "seed"], cwd=vault, check=True)
     write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "todo"])
     assert result.exit_code == 0, result.output

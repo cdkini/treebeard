@@ -42,9 +42,17 @@ def _patch_fzf(
     returncode: int = 0,
     capture: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Patch `subprocess.run` inside find module to return canned output."""
+    """Patch `subprocess.run` inside find module to return canned output
+    *only* for fzf calls. Non-fzf subprocess (e.g. git in the close
+    hook) passes through to the real implementation."""
+
+    real_run = subprocess.run
 
     def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        cmd = args[0] if args else kwargs.get("args", [])
+        is_fzf = bool(cmd) and isinstance(cmd, list) and "fzf" in str(cmd[0])
+        if not is_fzf:
+            return real_run(*args, **kwargs)
         if capture is not None:
             capture.append({"args": args, "kwargs": kwargs})
         return subprocess.CompletedProcess(
@@ -228,13 +236,14 @@ def test_bare_om_invokes_find(
     _patch_fzf(monkeypatch, stdout=f"\n\nfoo  (foo)  just now\t{target}\n")
 
     # The bare-om dispatch path uses the default config dir; we override
-    # via env var since there's no flag pre-subcommand. Easiest: just
-    # invoke via the explicit find path under test, plus a separate
-    # smoke that exercises the default-no-subcommand wiring.
+    # both `find.load_config` (used by the picker itself) and
+    # `cli.load_vault_path` (used by the auto-commit / post-edit hook in
+    # `_on_close`) so they target the same vault.
     monkeypatch.setattr(
         "om.commands.find.load_config",
         lambda _cd: __import__("om.config", fromlist=["Config"]).Config(vault=vault, editor="vim"),
     )
+    monkeypatch.setattr("om.cli.load_vault_path", lambda _cd: vault)
     result = runner.invoke(cli, [])
     assert result.exit_code == 0, result.output
     assert str(target) in result.output

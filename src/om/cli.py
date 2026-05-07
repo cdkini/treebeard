@@ -8,6 +8,7 @@ To add a new command, drop a module into `om/commands/` that defines a
 from __future__ import annotations
 
 import io
+import pathlib
 from datetime import UTC, datetime
 
 import click
@@ -15,9 +16,11 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from om import __version__, dependencies, git, ui
+from om import __version__, dependencies, editor, git, ui
 from om.commands import iter_commands
 from om.config import load_vault_path
+from om.editor import apply_post_edit
+from om.post_edit import PostEditAbort
 
 UNSYNCED_WARN_THRESHOLD = 5
 
@@ -89,10 +92,34 @@ def cli(ctx: click.Context) -> None:
         ctx.invoke(find_cmd.command, limit=find_cmd.BARE_LIMIT, config_dir=None)
 
 
+def _run_post_edit_hooks(vault: pathlib.Path) -> None:
+    """Run `apply_post_edit` on every dirty root-level `.md` in `vault`.
+
+    The porcelain sweep catches both files the subcommand explicitly
+    opened *and* files the user side-jumped to (via wikilinks, `gf`,
+    `:e other.md`). Per-file `PostEditAbort` (filename collision,
+    daily-tag protection) is logged and the loop continues — the user's
+    edit stays on disk and the auto-commit captures it.
+    """
+    now = editor._now_utc()
+    for path in git.changed_root_md_paths(vault):
+        try:
+            final = apply_post_edit(path, now=now)
+        except PostEditAbort as exc:
+            ui.warn(f"could not reconcile {path.name}: {exc}")
+            continue
+        ui.path(str(final))
+
+
 def _on_close(ctx: click.Context) -> None:
-    """Auto-commit any working-tree changes left by the subcommand, then
-    warn if local commits have piled up past `UNSYNCED_WARN_THRESHOLD`.
-    No-ops when no subcommand ran (e.g. `om --help`)."""
+    """Run the post-edit sweep, auto-commit any working-tree changes left
+    by the subcommand, then warn if local commits have piled up past
+    `UNSYNCED_WARN_THRESHOLD`. No-ops when no subcommand ran (e.g.
+    `om --help`).
+
+    Order matters: the sweep may rename files and bump `updated_at`, and
+    those changes need to land in the same commit as the user's edits.
+    """
     sub = ctx.invoked_subcommand
     if sub is None:
         return
@@ -100,6 +127,7 @@ def _on_close(ctx: click.Context) -> None:
         vault = load_vault_path(ctx.obj.get("config_dir"))
         if vault is None or not (vault / ".git").is_dir():
             return
+        _run_post_edit_hooks(vault)
         if git.has_changes(vault):
             ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
             git.commit_all(vault, f"{sub}: {ts}")

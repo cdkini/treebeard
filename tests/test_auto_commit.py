@@ -265,3 +265,257 @@ def test_silent_when_upstream_ref_missing(
         outputs.append(result.output)
 
     assert "unsynced commits" not in outputs[-1]
+
+
+# ---------- Post-edit close-hook tests --------------------------------------
+#
+# Every editor-running command has the post-edit lifecycle (bump
+# `updated_at`, reconcile filename) applied to *every* dirty `.md` at the
+# vault root, not just the explicit target. The cases below exercise the
+# behaviors the porcelain sweep enables.
+
+
+def _seed_committed(
+    vault: pathlib.Path,
+    name: str,
+    title: str,
+    *,
+    tags: list[str] | None = None,
+    body: str = "body\n",
+) -> pathlib.Path:
+    """Write a note and commit it so it's part of HEAD."""
+    path = vault / name
+    tag_line = f"[{', '.join(tags)}]" if tags else "[]"
+    path.write_text(
+        "---\n"
+        f"title: {title}\n"
+        "source: user\n"
+        "created_at: 2020-01-01T00:00:00Z\n"
+        "updated_at: 2020-01-01T00:00:00Z\n"
+        f"tags: {tag_line}\n"
+        "---\n" + body,
+        encoding="utf-8",
+    )
+    _git(vault, "add", "-A")
+    _git(vault, "commit", "--quiet", "-m", f"seed {name}")
+    return path
+
+
+def test_side_jump_target_gets_post_processed(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """User opens `primary.md` via `om note`, side-jumps in vim to
+    `other.md`, edits its title. The close hook reconciles `other.md`'s
+    filename even though `om note` never opened it."""
+    del freeze_now
+    other = _seed_committed(vault, "other.md", "other")
+    primary = _seed_committed(vault, "primary.md", "primary")
+
+    def jump_edit(_ed: str, _p: pathlib.Path) -> None:
+        text = other.read_text(encoding="utf-8")
+        other.write_text(text.replace("title: other", "title: Renamed"), encoding="utf-8")
+
+    fake_editor.append(jump_edit)
+    write_cfg(cfg_dir, vault)
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "primary"])
+    assert result.exit_code == 0, result.output
+
+    # Other was renamed by reconcile_filename based on its new title.
+    assert (vault / "renamed.md").exists()
+    assert not other.exists()
+    # Primary was untouched (no edit).
+    assert primary.exists()
+
+
+def test_untracked_create_gets_post_processed(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """`:w newnote.md` inside vim creates an untracked file; close hook
+    must catch it via `--untracked-files=all` and bump its updated_at."""
+    del freeze_now
+    primary = _seed_committed(vault, "primary.md", "primary")
+    new_path = vault / "newly-created.md"
+
+    def create_new(_ed: str, _p: pathlib.Path) -> None:
+        new_path.write_text(
+            "---\n"
+            "title: newly created\n"
+            "source: user\n"
+            "created_at: 2020-01-01T00:00:00Z\n"
+            "updated_at: 2020-01-01T00:00:00Z\n"
+            "tags: []\n"
+            "---\nbody\n",
+            encoding="utf-8",
+        )
+
+    fake_editor.append(create_new)
+    write_cfg(cfg_dir, vault)
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "primary"])
+    assert result.exit_code == 0, result.output
+
+    # New file was post-processed: updated_at was bumped.
+    assert new_path.exists()
+    text = new_path.read_text(encoding="utf-8")
+    assert "updated_at: 2020-01-01T00:00:00Z\n" not in text
+    assert "updated_at: 2026-05-07T14:23:05Z\n" in text
+    # Primary was untouched.
+    assert primary.exists()
+
+
+def test_deleted_file_not_post_processed(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """A file deleted during the editor session has nothing to reconcile.
+    The hook must skip it without raising."""
+    del freeze_now
+    target = _seed_committed(vault, "primary.md", "primary")
+    other = _seed_committed(vault, "other.md", "other")
+
+    def delete_other(_ed: str, _p: pathlib.Path) -> None:
+        other.unlink()
+
+    fake_editor.append(delete_other)
+    write_cfg(cfg_dir, vault)
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "primary"])
+    assert result.exit_code == 0, result.output
+
+    assert not other.exists()
+    assert target.exists()
+
+
+def test_archive_subdir_excluded(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """A side-jump into `.om/archive/old.md` must NOT be post-processed —
+    archived notes are intentionally frozen."""
+    del freeze_now
+    primary = _seed_committed(vault, "primary.md", "primary")
+
+    archive_dir = vault / ".om" / "archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archived = archive_dir / "old.md"
+    archived.write_text(
+        "---\n"
+        "title: old\n"
+        "source: user\n"
+        "created_at: 2020-01-01T00:00:00Z\n"
+        "updated_at: 2020-01-01T00:00:00Z\n"
+        "tags: []\n"
+        "---\nbody\n",
+        encoding="utf-8",
+    )
+    _git(vault, "add", "-A")
+    _git(vault, "commit", "--quiet", "-m", "seed archive")
+
+    def edit_archived(_ed: str, _p: pathlib.Path) -> None:
+        archived.write_text(
+            archived.read_text(encoding="utf-8").replace("title: old", "title: Renamed"),
+            encoding="utf-8",
+        )
+
+    fake_editor.append(edit_archived)
+    write_cfg(cfg_dir, vault)
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "primary"])
+    assert result.exit_code == 0, result.output
+
+    # Archive untouched by reconcile (no rename).
+    assert archived.exists()
+    assert "title: Renamed" in archived.read_text(encoding="utf-8")
+    # Primary was untouched.
+    assert primary.exists()
+
+
+def test_daily_rename_warns_and_preserves_edits(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+    freeze_today: None,
+) -> None:
+    """User retitles a daily note. The reconcile guard raises
+    PostEditAbort; the close hook warns and the user's content edits
+    survive (improvement over the old revert behavior, which destroyed
+    the user's edits)."""
+    del freeze_now, freeze_today
+    today_path = _seed_committed(
+        vault,
+        "2026-05-07.md",
+        "2026-05-07",
+        tags=["daily"],
+        body="\n### TODOs\n\n- [ ] task\n\n### Notes\n\n",
+    )
+
+    def retitle_and_edit(_ed: str, _p: pathlib.Path) -> None:
+        text = today_path.read_text(encoding="utf-8")
+        text = text.replace("title: 2026-05-07", "title: Sprint Retro")
+        text += "extra notes\n"
+        today_path.write_text(text, encoding="utf-8")
+
+    fake_editor.append(retitle_and_edit)
+    write_cfg(cfg_dir, vault)
+    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
+    assert result.exit_code == 0, result.output
+
+    assert "could not reconcile" in result.output
+    assert "daily note filename is protected" in result.output
+    # Filename preserved.
+    assert today_path.exists()
+    text = today_path.read_text(encoding="utf-8")
+    # User's edits are still on disk (the new title and the extra notes).
+    assert "title: Sprint Retro" in text
+    assert text.endswith("extra notes\n")
+
+
+def test_post_edit_lands_in_same_commit_as_edit(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """The post-edit hook must run *before* `commit_all`, so the rename
+    and `updated_at` bump end up in the same commit as the user's
+    content edits — not split across two."""
+    del freeze_now
+    seeded = _seed_committed(vault, "old-name.md", "old name")
+
+    def retitle(_ed: str, p: pathlib.Path) -> None:
+        del p  # the editor 'opens' a different file, but we mutate via path
+        text = seeded.read_text(encoding="utf-8")
+        seeded.write_text(text.replace("title: old name", "title: New Name"), encoding="utf-8")
+
+    fake_editor.append(retitle)
+    write_cfg(cfg_dir, vault)
+
+    before = _commit_count(vault)
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "old-name"])
+    assert result.exit_code == 0, result.output
+
+    after = _commit_count(vault)
+    assert after == before + 1, "exactly one new commit (no split rename/edit pair)"
+
+    # The single commit shows the rename + content change as a unit.
+    show = _git(vault, "show", "--stat", "HEAD")
+    assert "new-name.md" in show
+    assert "old-name.md" in show
+
+    # Post-conditions on disk.
+    assert (vault / "new-name.md").exists()
+    assert not seeded.exists()

@@ -32,7 +32,16 @@ def _patch_fzf(
     returncode: int = 0,
     capture: list[dict[str, Any]] | None = None,
 ) -> None:
+    """Intercept *only* fzf invocations; let other subprocess calls (git
+    in the auto-commit / post-edit close hook, especially) reach the
+    real implementation."""
+    real_run = subprocess.run
+
     def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        cmd = args[0] if args else kwargs.get("args", [])
+        is_fzf = bool(cmd) and isinstance(cmd, list) and "fzf" in str(cmd[0])
+        if not is_fzf:
+            return real_run(*args, **kwargs)
         if capture is not None:
             capture.append({"args": args, "kwargs": kwargs})
         return subprocess.CompletedProcess(

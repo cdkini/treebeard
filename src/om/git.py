@@ -54,6 +54,61 @@ def has_changes(vault: pathlib.Path) -> bool:
     return bool(out.strip())
 
 
+def changed_root_md_paths(vault: pathlib.Path) -> list[pathlib.Path]:
+    """Return absolute paths of root-level `.md` files that differ from HEAD.
+
+    Used by the CLI close hook to find every note touched during a
+    subcommand — including side-jumps to files the command never
+    explicitly opened. Wraps `git status --porcelain -z
+    --untracked-files=all`:
+
+      - `-z`: NUL-delimited records, no quoting on weird filenames.
+      - `--untracked-files=all`: catches notes created during the
+        subcommand (`:w newfile.md` inside vim).
+      - For renames (`R`) and copies (`C`), porcelain emits two NUL
+        records per entry — `<new>\\0<old>\\0` — and we use the new path.
+
+    Filters to: paths ending in `.md`, no `/` separator (vault is flat —
+    `.om/`, `.git/`, and any subdir are excluded by construction), and
+    paths that exist on disk after the subcommand exits (deletions are
+    skipped — nothing to reconcile on a missing file).
+    """
+    out = subprocess.run(
+        ["git", "status", "--porcelain", "-z", "--untracked-files=all"],
+        cwd=vault,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    paths: list[pathlib.Path] = []
+    records = out.split("\0")
+    i = 0
+    while i < len(records):
+        record = records[i]
+        i += 1
+        if not record:
+            continue
+        # Each record is "XY<space><path>". The first two chars are the
+        # status; column 3 is a space; the rest is the path.
+        if len(record) < 4:
+            continue
+        status = record[:2]
+        name = record[3:]
+        # R/C entries are followed by a separate record holding the old
+        # path; consume and ignore it.
+        if status[0] in ("R", "C") or status[1] in ("R", "C"):
+            i += 1
+        if "/" in name:
+            continue
+        if not name.endswith(".md"):
+            continue
+        candidate = vault / name
+        if not candidate.exists():
+            continue
+        paths.append(candidate)
+    return paths
+
+
 def commit_all(vault: pathlib.Path, message: str) -> None:
     """Stage everything and commit with `message`."""
     subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
