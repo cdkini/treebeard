@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime
 import pytest
 from click.testing import CliRunner
 
+from om import config as config_mod
 from om import editor as editor_mod
 from om.commands import daily as daily_cmd
 from om.commands import note as note_cmd
@@ -37,6 +38,17 @@ def _isolated_git_global(
     )
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(fake))
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+
+
+@pytest.fixture(autouse=True)
+def _sandbox_default_config_dir(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Redirect the default config dir away from `~/.om` so any test that
+    invokes the CLI without an explicit `--config-dir` cannot read or
+    write the developer's real vault."""
+    sandbox = tmp_path_factory.mktemp("om-default-cfg")
+    monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_DIR", str(sandbox))
 
 
 @pytest.fixture

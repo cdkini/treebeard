@@ -7,7 +7,6 @@ To add a new command, drop a module into `om/commands/` that defines a
 
 from __future__ import annotations
 
-import sys
 from datetime import UTC, datetime
 
 import click
@@ -25,32 +24,31 @@ from om.config import load_vault_path
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """Root command group."""
-    argv = sys.argv[1:]
-    if not argv:
-        return
     # Subcommands set ctx.obj["config_dir"] so logging targets the same
     # vault the command actually used (not just the default location).
     ctx.ensure_object(dict)
     # One callback so the order is explicit. `call_on_close` runs LIFO,
     # which made a two-callback setup easy to get backwards — see
     # https://click.palletsprojects.com/en/stable/api/#click.Context.call_on_close
-    ctx.call_on_close(lambda: _on_close(ctx, argv))
+    ctx.call_on_close(lambda: _on_close(ctx))
 
 
-def _on_close(ctx: click.Context, argv: list[str]) -> None:
+def _on_close(ctx: click.Context) -> None:
     """End-of-command housekeeping: append the usage log line, then
-    auto-commit any working-tree changes (including that line)."""
-    usage_log.log_invocation(ctx.obj.get("config_dir"), argv)
+    auto-commit any working-tree changes (including that line). No-ops
+    when no subcommand ran (e.g. `om`, `om --help`)."""
+    sub = ctx.invoked_subcommand
+    if sub is None:
+        return
+    usage_log.log_invocation(ctx.obj.get("config_dir"), [sub])
     try:
         vault = load_vault_path(ctx.obj.get("config_dir"))
         if vault is None or not (vault / ".git").is_dir():
             return
         if not git.has_changes(vault):
             return
-        if ctx.invoked_subcommand is None:
-            return
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        git.commit_all(vault, f"{ctx.invoked_subcommand}: {ts}")
+        git.commit_all(vault, f"{sub}: {ts}")
     except Exception:
         return
 
