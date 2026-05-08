@@ -28,6 +28,7 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ClaudeSDKError,
+    HookMatcher,
     ResultMessage,
     StreamEvent,
     TextBlock,
@@ -48,6 +49,12 @@ from om.ui import status_console
 # `Bash`, `Write`, `Edit`, `WebSearch`-style mutators are intentionally
 # absent — chat must never modify the vault.
 ALLOWED_TOOLS = ("Read", "Glob", "Grep", "WebFetch", "WebSearch")
+
+# Vault-relative directory holding soft-deleted notes (see `om archive`).
+# Chat must never read these — they were intentionally taken out of the
+# active set, and surfacing them would re-introduce stale context the
+# user already retired.
+ARCHIVE_REL_DIR = pathlib.PurePosixPath(".om/archive")
 
 # Vault-aware system prompt. The SDK's default is the full Claude Code
 # agent persona — that's why Claude was trying to call MCP servers and
@@ -94,6 +101,54 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
+def _path_targets_archive(value: str, vault: pathlib.Path) -> bool:
+    """Resolve `value` against `vault` and return True if it lands inside
+    `.om/archive/`. Accepts both vault-relative and absolute paths; an
+    unparseable value is treated as not-archive (the model will get a
+    normal tool error from Claude Code itself)."""
+    if not value:
+        return False
+    try:
+        candidate = pathlib.Path(value)
+        if not candidate.is_absolute():
+            candidate = vault / candidate
+        resolved = candidate.resolve(strict=False)
+    except (OSError, ValueError):
+        return False
+    archive_root = (vault / ARCHIVE_REL_DIR).resolve(strict=False)
+    return resolved == archive_root or archive_root in resolved.parents
+
+
+def _archive_guard_hook(vault: pathlib.Path) -> Any:
+    """PreToolUse hook: deny Read/Glob/Grep calls that target the archive.
+
+    Returned as an `async` callable matching `HookCallback`. We inspect
+    the path-bearing fields each tool uses (`file_path` for Read,
+    `path`/`pattern` for Glob and Grep) and short-circuit with a deny
+    decision; the model sees the reason and can adjust.
+    """
+
+    async def _hook(input_data: Any, _tool_use_id: str | None, _ctx: Any) -> dict[str, Any]:
+        tool_input = input_data.get("tool_input") or {}
+        for key in ("file_path", "path", "pattern"):
+            value = tool_input.get(key)
+            if isinstance(value, str) and _path_targets_archive(value, vault):
+                return {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": (
+                            f"`{ARCHIVE_REL_DIR}` is off-limits to chat — these "
+                            "notes were archived intentionally and must not be "
+                            "read or searched."
+                        ),
+                    }
+                }
+        return {}
+
+    return _hook
+
+
 def _make_client(vault: pathlib.Path, model: str) -> ClaudeSDKClient:
     """Vault-aware chat session.
 
@@ -123,6 +178,14 @@ def _make_client(vault: pathlib.Path, model: str) -> ClaudeSDKClient:
         cwd=str(vault),
         include_partial_messages=True,
         model=model,
+        hooks={
+            "PreToolUse": [
+                HookMatcher(
+                    matcher="Read|Glob|Grep",
+                    hooks=[_archive_guard_hook(vault)],
+                ),
+            ],
+        },
         # Latency: skip silent reasoning before the first token. Casual
         # chat doesn't benefit much from extended thinking, and disabling
         # it cuts several seconds off TTFT on short replies.

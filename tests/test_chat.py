@@ -317,3 +317,69 @@ def test_client_options_open_session_in_vault_with_readonly_tools(
     assert "vault" in options.system_prompt.lower()
     # Model alias is forwarded as-is — the `claude` CLI resolves it.
     assert options.model == "sonnet"
+
+
+def test_archive_guard_denies_read_into_archive(vault: pathlib.Path) -> None:
+    """The PreToolUse hook on Read/Glob/Grep should deny any path that
+    resolves into `<vault>/.om/archive/`. Regression: chat must never
+    surface archived notes."""
+    import asyncio
+
+    from om.chat import _archive_guard_hook
+
+    hook = _archive_guard_hook(vault)
+
+    cases = [
+        # Read with a vault-relative file path inside the archive.
+        ("Read", {"file_path": ".om/archive/2026-05-01__old-note.md"}),
+        # Read with an absolute path inside the archive.
+        ("Read", {"file_path": str(vault / ".om" / "archive" / "x.md")}),
+        # Glob targeting the archive via path.
+        ("Glob", {"pattern": "*.md", "path": ".om/archive"}),
+        # Glob targeting the archive via pattern.
+        ("Glob", {"pattern": ".om/archive/**/*.md"}),
+        # Grep targeting the archive via path.
+        ("Grep", {"pattern": "TODO", "path": ".om/archive"}),
+    ]
+    for tool_name, tool_input in cases:
+        result = asyncio.run(
+            hook(
+                {"tool_name": tool_name, "tool_input": tool_input},
+                "tool-use-id",
+                {"signal": None},
+            )
+        )
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny", (
+            tool_name,
+            tool_input,
+        )
+
+    # Sanity: paths outside the archive must not be denied.
+    benign = [
+        ("Read", {"file_path": "2026-05-08.md"}),
+        ("Glob", {"pattern": "*.md"}),
+        ("Grep", {"pattern": "archive", "path": "."}),
+    ]
+    for tool_name, tool_input in benign:
+        result = asyncio.run(
+            hook(
+                {"tool_name": tool_name, "tool_input": tool_input},
+                "tool-use-id",
+                {"signal": None},
+            )
+        )
+        assert "hookSpecificOutput" not in result, (tool_name, tool_input)
+
+
+def test_make_client_wires_archive_guard_hook(vault: pathlib.Path) -> None:
+    """The client options should register a PreToolUse hook on
+    Read|Glob|Grep so the archive guard runs before any read tool fires."""
+    from om.chat import _make_client
+
+    client = _make_client(vault, "sonnet")
+    options = client.options
+    assert options.hooks is not None
+    pre_tool_use = options.hooks.get("PreToolUse") or []
+    assert pre_tool_use, "expected a PreToolUse hook matcher"
+    matchers = {m.matcher for m in pre_tool_use}
+    assert "Read|Glob|Grep" in matchers
