@@ -190,9 +190,8 @@ def _parse_vault_path(value: object) -> pathlib.Path | None:
 
 
 def load_vault_path(config_dir: str | None) -> pathlib.Path | None:
-    """Best-effort vault lookup for callers that need only the path
-    (e.g. usage logging). Returns None on any read failure so callers
-    can no-op silently."""
+    """Best-effort vault lookup. Returns None on any read failure so
+    callers can no-op silently."""
     return _read_field(config_dir, "vault", _parse_vault_path, None)
 
 

@@ -252,18 +252,14 @@ def _head_message(vault: pathlib.Path) -> str:
 
 def test_creates_initial_commit_on_fresh_vault(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     """A fresh vault with no notes still gets a HEAD so downstream
-    commands (sync, the auto-commit hook) don't trip on a commitless repo.
-
-    The usage-log line written by the close hook lands as a follow-up
-    `init:` auto-commit (the `init` body and the close hook each commit
-    once)."""
+    commands (sync, the auto-commit hook) don't trip on a commitless repo."""
     vault = tmp_path / "vault"
     cfg_dir = tmp_path / "cfg"
 
     result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
-    assert _commit_count(vault) == 2
+    assert _commit_count(vault) == 1
     assert _head_message(vault).startswith("init: ")
 
 
@@ -314,17 +310,8 @@ def test_does_not_recommit_when_adopting_repo_with_history(
     result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
 
     assert result.exit_code == 0, result.output
-    # Original `preexisting` commit + the close-hook auto-commit that
-    # picks up the usage-log line. The point of this test is that init
-    # itself doesn't add an empty bootstrap commit, so HEAD's parent
-    # must still be the user's `preexisting` commit.
-    assert _commit_count(vault) == 2
-    assert _head_message(vault).startswith("init: ")
-    parent_msg = subprocess.run(
-        ["git", "log", "-1", "--format=%s", "HEAD~1"],
-        cwd=vault,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    assert parent_msg == "preexisting"
+    # The point of this test is that init itself doesn't add an empty
+    # bootstrap commit, so HEAD must still be the user's `preexisting`
+    # commit.
+    assert _commit_count(vault) == 1
+    assert _head_message(vault) == "preexisting"
