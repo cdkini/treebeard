@@ -64,9 +64,22 @@ ARCHIVE_REL_DIR = pathlib.PurePosixPath(".om/archive")
 # Loaded from `om/prompts/system_prompt.txt` so edits don't require
 # touching Python. Read once at import; the file is a package-shipped
 # constant.
-SYSTEM_PROMPT = (
+SYSTEM_PROMPT_BASE = (
     resources.files("om").joinpath("prompts/system_prompt.txt").read_text(encoding="utf-8").strip()
 )
+
+
+def _build_system_prompt(now: datetime) -> str:
+    """Append today's UTC date to the base prompt.
+
+    The vault CLAUDE.md tells the model to reason about dates from
+    daily-note filenames (`YYYY-MM-DD.md`), but without an anchor for
+    "today" it has to ask the user or guess. Pinning the date at session
+    start lets phrases like "yesterday" / "last week" resolve directly.
+    """
+    today = now.astimezone(UTC).date().isoformat()
+    return f"{SYSTEM_PROMPT_BASE}\n\nToday is {today} (UTC)."
+
 
 # Glyph for the user-input prompt — matches `om init`'s aesthetic.
 PROMPT_GLYPH = "▸"
@@ -168,7 +181,7 @@ def _make_client(vault: pathlib.Path, model: str) -> ClaudeSDKClient:
     chunk at end-of-turn.
     """
     options = ClaudeAgentOptions(
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=_build_system_prompt(_now_utc()),
         tools=list(ALLOWED_TOOLS),
         allowed_tools=list(ALLOWED_TOOLS),
         mcp_servers={},
@@ -188,11 +201,9 @@ def _make_client(vault: pathlib.Path, model: str) -> ClaudeSDKClient:
         },
         # Latency: skip silent reasoning before the first token. Casual
         # chat doesn't benefit much from extended thinking, and disabling
-        # it cuts several seconds off TTFT on short replies.
+        # it cuts several seconds off TTFT on short replies. With thinking
+        # disabled, `effort` has nothing to modulate — leave it unset.
         thinking=ThinkingConfigDisabled(type="disabled"),
-        # Latency: low effort means fewer/consolidated tool calls, less
-        # preamble, terser confirmations. Best fit for chat.
-        effort="low",
     )
     return ClaudeSDKClient(options=options)
 
