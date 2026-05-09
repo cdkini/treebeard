@@ -1,6 +1,6 @@
 """`om archive` — soft-delete notes by moving them into `.om/archive/`.
 
-Lists notes via fzf with the same row format as `om find`. Tab marks
+Lists notes via fzf with the same row format as `om open`. Tab marks
 multiple rows; Enter archives the marked set (or the focused row if
 nothing is marked). Each archived file is renamed to
 `.om/archive/{utc_iso}__{original-filename}`, where the timestamp is
@@ -8,7 +8,7 @@ computed once per invocation so a multi-archive groups together
 lexicographically.
 
 The archive directory is intentionally inside `.om/`, which is excluded
-from `om find` and `om grep`'s non-recursive vault glob. Files reappear
+from `om open` and `om grep`'s non-recursive vault glob. Files reappear
 nowhere else automatically — restore is a manual `mv` (or a future `om
 restore`). The auto-commit hook at the CLI root records each archive as
 a git rename.

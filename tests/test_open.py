@@ -1,4 +1,4 @@
-"""Tests for `om.commands.find` — fzf invocation and dispatch."""
+"""Tests for `om.commands.open_` — fzf invocation and dispatch."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from click.testing import CliRunner
 
 from om import dependencies as deps_mod
 from om.cli import cli
-from om.commands import find as find_mod
+from om.commands import open_ as open_mod
 from tests.conftest import EditorFake, write_cfg
 
 
@@ -42,7 +42,7 @@ def _patch_fzf(
     returncode: int = 0,
     capture: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Patch `subprocess.run` inside find module to return canned output
+    """Patch `subprocess.run` inside open_ module to return canned output
     *only* for fzf calls. Non-fzf subprocess (e.g. git in the close
     hook) passes through to the real implementation."""
 
@@ -59,7 +59,7 @@ def _patch_fzf(
             args=args, returncode=returncode, stdout=stdout, stderr=""
         )
 
-    monkeypatch.setattr(find_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(open_mod.subprocess, "run", fake_run)
 
 
 def test_fails_when_fzf_missing(
@@ -74,7 +74,7 @@ def test_fails_when_fzf_missing(
         "which",
         lambda name: None if name == "fzf" else f"/usr/bin/{name}",
     )
-    result = runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     assert result.exit_code != 0
     assert "fzf is required" in result.output
     assert "brew install fzf" in result.output
@@ -88,7 +88,7 @@ def test_empty_vault(
 ) -> None:
     write_cfg(cfg_dir, vault)
     _patch_fzf_present(monkeypatch)
-    result = runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     assert "vault is empty" in result.output
 
@@ -109,7 +109,7 @@ def test_enter_opens_selected(
     fzf_stdout = f"\n\nfoo  (foo)  just now\t{target}\n"
     _patch_fzf(monkeypatch, stdout=fzf_stdout)
 
-    result = runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     assert str(target) in result.output
 
@@ -133,7 +133,7 @@ def test_ctrl_n_with_query_creates_named(
         p.write_text(p.read_text(encoding="utf-8") + "stuff\n", encoding="utf-8")
 
     fake_editor.append(add_body)
-    result = runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     assert (vault / "my-new-idea.md").exists()
 
@@ -156,7 +156,7 @@ def test_ctrl_n_empty_query_creates_scratch(
         p.write_text(p.read_text(encoding="utf-8") + "stuff\n", encoding="utf-8")
 
     fake_editor.append(add_body)
-    result = runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
     assert (vault / "scratch-2026-05-07t14-23-05.md").exists()
 
@@ -175,7 +175,7 @@ def test_ctrl_n_query_collides_errors(
     _patch_fzf_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout="foo\nctrl-n\n\n")
 
-    result = runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     assert result.exit_code != 0
     assert "already exists" in result.output
 
@@ -194,7 +194,7 @@ def test_esc_cancels_silently(
     _patch_fzf_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout="", returncode=130)
 
-    result = runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     assert result.exit_code == 0, result.output
 
 
@@ -212,7 +212,7 @@ def test_preview_uses_configured_previewer(
     _patch_fzf_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     assert capture, "fzf was not invoked"
     cmd = capture[0]["args"][0]
     preview_flag = next((a for a in cmd if a.startswith("--preview=")), None)
@@ -220,36 +220,20 @@ def test_preview_uses_configured_previewer(
     assert "bat" in preview_flag
 
 
-def test_bare_om_invokes_find(
+def test_bare_om_shows_help(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
-    vault: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    fake_editor: list[EditorFake],
-    freeze_now: list,
 ) -> None:
-    """`om` with no subcommand should route through find."""
-    del freeze_now, fake_editor
-    write_cfg(cfg_dir, vault)
-    target = _seed_note(vault, "foo.md", "foo")
+    """Bare `om` should print the subcommand list, not run the picker."""
     _patch_fzf_present(monkeypatch)
-    _patch_fzf(monkeypatch, stdout=f"\n\nfoo  (foo)  just now\t{target}\n")
-
-    # The bare-om dispatch path uses the default config dir; we override
-    # both `find.load_config` (used by the picker itself) and
-    # `cli.load_vault_path` (used by the auto-commit / post-edit hook in
-    # `_on_close`) so they target the same vault.
-    monkeypatch.setattr(
-        "om.commands.find.load_config",
-        lambda _cd: __import__("om.config", fromlist=["Config"]).Config(vault=vault, editor="vim"),
-    )
-    monkeypatch.setattr("om.cli.load_vault_path", lambda _cd: vault)
     result = runner.invoke(cli, [])
-    assert result.exit_code == 0, result.output
-    assert str(target) in result.output
+    assert "Commands" in result.output
+    assert "open" in result.output
+    assert "grep" in result.output
+    assert "chat" in result.output
 
 
-def test_explicit_find_lists_all_notes(
+def test_explicit_open_lists_all_notes(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
@@ -257,7 +241,7 @@ def test_explicit_find_lists_all_notes(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """`om find` (no --limit) should list every note, not just 20."""
+    """`om open` (no --limit) should list every note, not just 20."""
     del freeze_now, fake_editor
     write_cfg(cfg_dir, vault)
     for i in range(25):
@@ -265,12 +249,12 @@ def test_explicit_find_lists_all_notes(
     _patch_fzf_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     fzf_input = capture[0]["kwargs"]["input"]
     assert len(fzf_input.strip().split("\n")) == 25
 
 
-def test_find_with_limit(
+def test_open_with_limit(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
@@ -285,7 +269,7 @@ def test_find_with_limit(
     _patch_fzf_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["find", "--config-dir", str(cfg_dir), "--limit", "5"])
+    runner.invoke(cli, ["open", "--config-dir", str(cfg_dir), "--limit", "5"])
     fzf_input = capture[0]["kwargs"]["input"]
     assert len(fzf_input.strip().split("\n")) == 5
 
@@ -310,7 +294,7 @@ def test_preview_falls_back_to_cat(
     monkeypatch.setattr(deps_mod.shutil, "which", which)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["find", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
     assert capture, "fzf was not invoked"
     cmd = capture[0]["args"][0]
     preview_flag = next((a for a in cmd if a.startswith("--preview=")), None)

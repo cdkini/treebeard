@@ -38,7 +38,7 @@ def list_recent_notes(vault: pathlib.Path, limit: int | None = 10) -> list[pathl
     Vaults are flat — every user note lives at the root. A
     non-recursive glob skips tooling dirs (`.om/`, `.git/`, `.claude/`)
     for free; the alternative `rglob` would surface
-    `.claude/CLAUDE.md` (`om chat`'s project memory) in `om find`.
+    `.claude/CLAUDE.md` (`om chat`'s project memory) in `om open`.
     `limit=None` returns every note.
     """
     entries = [(entry.stat().st_mtime, entry) for entry in vault.glob("*.md")]

@@ -1,7 +1,6 @@
 """`om help` — canonical help surface.
 
-Mirrors `om --help`. Both work; docs nudge users to the subcommand form
-so bare `om` is unambiguously the picker.
+Mirrors `om --help` (and bare `om`).
 """
 
 from __future__ import annotations

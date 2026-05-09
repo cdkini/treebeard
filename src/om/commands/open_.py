@@ -1,11 +1,9 @@
-"""`om find` — interactive picker over the vault.
+"""`om open` — interactive picker over the vault.
 
 Lists notes via fzf with a full-file preview pane. Enter opens the
 selected note; Ctrl-N creates a new note named after the typed query
-(or a fresh scratch if the query is empty).
-
-Bare `om` dispatches to this command with `limit=10` (recent-only).
-Explicit `om find` shows every note by default; pass `--limit N` to cap.
+(or a fresh scratch if the query is empty). Pass `--limit N` to cap
+the list to the N most recently edited notes.
 """
 
 from __future__ import annotations
@@ -28,8 +26,6 @@ from om.editor import reopen
 from om.post_edit import PostEditAbort, slugify
 from om.ui import OmError
 from om.vault import list_recent_notes
-
-BARE_LIMIT = 20
 
 
 def _now_utc() -> datetime:
@@ -70,7 +66,7 @@ def _run_fzf(lines: list[str], previewer: str) -> tuple[str, str, str]:
 
 
 def run(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> None:
-    """Run the picker against `vault`. Shared by `om find` and bare `om`."""
+    """Run the picker against `vault`."""
     paths = list_recent_notes(vault, limit)
     if not paths:
         ui.info("vault is empty — create a note with `om note <name>`")
@@ -111,7 +107,7 @@ def run(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> 
     reopen(target_path, editor)
 
 
-@click.command("find")
+@click.command("open")
 @click.option(
     "--limit",
     "limit",
@@ -128,7 +124,7 @@ def run(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> 
 )
 @click.pass_context
 def command(ctx: click.Context, limit: int | None, config_dir: str | None) -> None:
-    """Fuzzy-find a note across the whole vault and open it."""
+    """Fuzzy-pick a note across the whole vault and open it."""
     ctx.ensure_object(dict)["config_dir"] = config_dir
     cfg = load_config(config_dir)
     run(cfg.vault, cfg.editor, cfg.previewer, limit)

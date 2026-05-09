@@ -1,4 +1,4 @@
-"""Shared fzf wiring used by `om find` and `om grep`."""
+"""Shared fzf wiring used by `om open` and `om grep`."""
 
 from __future__ import annotations
 

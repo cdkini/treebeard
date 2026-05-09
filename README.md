@@ -8,7 +8,7 @@ Requires [uv](https://docs.astral.sh/uv/), Python 3.12+, [`fzf`](https://github.
 (`brew install fzf`), and [`ripgrep`](https://github.com/BurntSushi/ripgrep)
 (`brew install ripgrep`, used by `om grep`).
 
-For the `om find` preview pane you can pick one of
+For the `om open` preview pane you can pick one of
 [`bat`](https://github.com/sharkdp/bat) (`brew install bat`,
 syntax-highlighted source — the default),
 [`glow`](https://github.com/charmbracelet/glow) (`brew install glow`,
@@ -25,12 +25,12 @@ so edits to `src/om/` take effect without reinstalling. `make uninstall` removes
 
 ## Usage
 
-Bare `om` opens an interactive picker over the 20 most recently edited
-notes (mtime sorted). Enter opens the highlighted note in your editor;
-Ctrl-N creates a new note named after whatever you've typed.
+Bare `om` (or `om help` / `om --help`) prints the subcommand list.
 
-`om find` is the same picker without the recent-only cap — it lists
-every note in the vault. Pass `--limit N` to cap.
+`om open` opens an interactive picker over every note in the vault
+(mtime sorted). Enter opens the highlighted note in your editor;
+Ctrl-N creates a new note named after whatever you've typed. Pass
+`--limit N` to cap to the N most recently edited.
 
 `om grep` runs ripgrep through fzf — type to search note contents,
 Enter opens the matched note at the matched line.
@@ -42,9 +42,9 @@ a JSONL transcript to `<vault>/.om/conversations/chat-<UTC-timestamp>.jsonl`,
 which the auto-commit hook lands in git on exit. Ctrl-D (or Ctrl-C) exits.
 
 ```bash
-om                # picker (last 20)
-om find           # picker (all notes)
-om find --limit 5 # picker (last 5)
+om                # show subcommands
+om open           # picker (all notes)
+om open --limit 5 # picker (last 5)
 om grep           # fuzzy-search note contents
 om chat           # interactive Claude REPL
 om help           # show all subcommands

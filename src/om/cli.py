@@ -67,27 +67,16 @@ class RichGroup(click.Group):
     cls=RichGroup,
     help="om — the omniscience CLI.",
     context_settings={"help_option_names": ["-h", "--help"]},
-    invoke_without_command=True,
 )
 @click.version_option(__version__, "-V", "--version", prog_name="om")
 @click.pass_context
 def cli(ctx: click.Context) -> None:
-    """Root command group. Bare `om` launches the picker."""
+    """Root command group."""
     # Subcommands set ctx.obj["config_dir"] so the auto-commit hook
     # targets the same vault the command actually used.
     ctx.ensure_object(dict)
     dependencies.check_all()
     ctx.call_on_close(lambda: _on_close(ctx))
-
-    if ctx.invoked_subcommand is None:
-        # Dispatch to the find picker with the recent-only cap. Setting
-        # invoked_subcommand makes `_on_close` run the auto-commit path
-        # with subject "find" (instead of bailing out for a no-subcommand
-        # call).
-        from om.commands import find as find_cmd
-
-        ctx.invoked_subcommand = "find"
-        ctx.invoke(find_cmd.command, limit=find_cmd.BARE_LIMIT, config_dir=None)
 
 
 def _run_post_edit_hooks(vault: pathlib.Path) -> None:

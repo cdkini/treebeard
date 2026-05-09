@@ -36,7 +36,7 @@ uv run pytest tests/test_chat.py::test_basic_repl -xvs
 
 ### `_on_close` post-edit + auto-commit hook
 
-`cli()` registers `ctx.call_on_close(lambda: _on_close(ctx))`. On exit of every subcommand (including bare `om`, which dispatches to `find`):
+`cli()` registers `ctx.call_on_close(lambda: _on_close(ctx))`. On exit of every subcommand (bare `om` prints help and skips the hook):
 
 1. **Post-edit sweep** (`_run_post_edit_hooks`) — runs `editor.apply_post_edit` on every dirty root-level `.md` reported by `git.changed_root_md_paths`. This catches both the file the subcommand opened and any sidetracks (`:e other.md`, wikilinks, `gf`). `post_edit.reconcile_filename` renames each file to `slugify(title)`; daily-tagged notes are exempt; `PostEditAbort` (collision, daily protection) is warned and the loop continues so the user's edit isn't lost.
 2. **Auto-commit** — if `git.has_changes`, `git.commit_all` with subject `<subcommand>: <UTC-timestamp>`.

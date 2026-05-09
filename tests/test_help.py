@@ -22,4 +22,4 @@ def test_help_lists_known_commands(runner: CliRunner) -> None:
     assert "sync" in result.output
     assert "config" in result.output
     assert "help" in result.output
-    assert "find" in result.output
+    assert "open" in result.output
