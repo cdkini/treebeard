@@ -4,8 +4,12 @@
 
 > The world is changing: I feel it in the water, I feel it in the earth, and I smell it in the air.
 
-`treebeard` — a personal-notes CLI over a flat, git-synced markdown vault, with a
-Claude REPL that knows your notes.
+A note-taking and personal knowledgement management (PKM) system CLI over a flat, git-synced markdown vault. Treebeard is designed with speed and efficiency in mind, attempting to enable low friction collection and synthesis of ideas. Basic functionality is augmented with LLM-tooling to answer questions about notes, derive insights, and aid the user with drafts. 
+
+For your sanity, please set:
+```bash
+alias t="treebeard"
+```
 
 ## What it is
 
