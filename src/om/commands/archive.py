@@ -22,7 +22,7 @@ import time
 
 import click
 
-from om import archiver, fzf, picker, ui
+from om import archiver, fzf, picker, ui, vault_layout
 from om.config import load_config
 from om.vault import list_recent_notes
 
@@ -84,7 +84,7 @@ def run(vault: pathlib.Path, previewer: str) -> None:
     for source in selected:
         ui.success(f"archived {source.name}")
     if len(selected) > 1:
-        ui.info(f"archived {len(selected)} notes to .om/{archiver.ARCHIVE_DIRNAME}/")
+        ui.info(f"archived {len(selected)} notes to {vault_layout.ARCHIVE_REL}/")
 
 
 @click.command("archive")

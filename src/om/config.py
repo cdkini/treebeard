@@ -15,6 +15,7 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from om import vault_layout
 from om.ui import OmError
 
 DEFAULT_CONFIG_DIR = "~/.om"
@@ -117,7 +118,7 @@ def is_valid_vault(vault: pathlib.Path) -> tuple[bool, str | None]:
     Returns `(ok, reason)` — `reason` is a user-facing string when not ok."""
     if not vault.is_dir():
         return False, f"vault {vault} does not exist"
-    if not (vault / ".om").is_dir():
+    if not vault_layout.om_dir(vault).is_dir():
         return False, f"{vault} is missing .om/ (not an om vault)"
     if not (vault / ".git").is_dir():
         return False, f"{vault} is missing .git/ (run `git init` or restore from a backup)"

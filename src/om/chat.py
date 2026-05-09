@@ -41,7 +41,7 @@ from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.text import Text
 
-from om import ui
+from om import ui, vault_layout
 from om.ui import status_console
 
 # Read-only tools we expose to the chat session. The user's vault is
@@ -49,12 +49,6 @@ from om.ui import status_console
 # `Bash`, `Write`, `Edit`, `WebSearch`-style mutators are intentionally
 # absent — chat must never modify the vault.
 ALLOWED_TOOLS = ("Read", "Glob", "Grep", "WebFetch", "WebSearch")
-
-# Vault-relative directory holding soft-deleted notes (see `om archive`).
-# Chat must never read these — they were intentionally taken out of the
-# active set, and surfacing them would re-introduce stale context the
-# user already retired.
-ARCHIVE_REL_DIR = pathlib.PurePosixPath(".om/archive")
 
 # Vault-aware system prompt. The SDK's default is the full Claude Code
 # agent persona — that's why Claude was trying to call MCP servers and
@@ -101,7 +95,7 @@ SLASH_COMMANDS: tuple[tuple[str, str], ...] = (
 
 def conversation_path(vault: pathlib.Path, started_at: datetime) -> pathlib.Path:
     stamp = started_at.astimezone(UTC).strftime("%Y%m%d-%H%M%S")
-    return vault / ".om" / "conversations" / f"chat-{stamp}.jsonl"
+    return vault_layout.conversations_dir(vault) / f"chat-{stamp}.jsonl"
 
 
 def append_jsonl(path: pathlib.Path, record: dict[str, Any]) -> None:
@@ -128,7 +122,7 @@ def _path_targets_archive(value: str, vault: pathlib.Path) -> bool:
         resolved = candidate.resolve(strict=False)
     except (OSError, ValueError):
         return False
-    archive_root = (vault / ARCHIVE_REL_DIR).resolve(strict=False)
+    archive_root = vault_layout.archive_dir(vault).resolve(strict=False)
     return resolved == archive_root or archive_root in resolved.parents
 
 
@@ -151,7 +145,7 @@ def _archive_guard_hook(vault: pathlib.Path) -> Any:
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "deny",
                         "permissionDecisionReason": (
-                            f"`{ARCHIVE_REL_DIR}` is off-limits to chat — these "
+                            f"`{vault_layout.ARCHIVE_REL}` is off-limits to chat — these "
                             "notes were archived intentionally and must not be "
                             "read or searched."
                         ),

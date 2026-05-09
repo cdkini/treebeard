@@ -79,6 +79,12 @@ Implications when adding a subcommand:
 - **Archive guard is a PreToolUse hook** that denies `Read`/`Glob`/`Grep` whose path resolves into `<vault>/.om/archive/`. Any new path-bearing tool needs the same treatment.
 - **`setting_sources=["project"]`** — the vault's `.claude/CLAUDE.md` and `.claude/` config flow through; the user's global Claude Code agent prompt and MCP servers are excluded by design.
 
+### `<vault>/.om/` layout
+
+`src/om/vault_layout.py` is the single source of truth for what lives under `<vault>/.om/` (the per-vault state dir, *not* `~/.om/`, which is the user-level config dir handled in `om.config`). Known sections today: `archive/` (soft-deleted notes, owned by `om.archiver`) and `conversations/` (chat JSONL transcripts, owned by `om.chat`).
+
+When adding a new `.om/` section, register it in `vault_layout` first and import the constructor from there — don't hardcode `.om/<name>` elsewhere. Helpers in this module are pure path construction: no `mkdir`, no existence checks, no raises. Owners create their own subdirs lazily on first write (see `archiver.archive_paths`, `chat.append_jsonl`); be defensive and never assume a section exists.
+
 ## Tests
 
 Pytest with heavy fixture isolation. See `tests/conftest.py` — prefer fixtures over `unittest.mock` for new tests. Key fixtures:

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 
 import click
 
-from om import dependencies, git, scaffold, ui
+from om import dependencies, git, scaffold, ui, vault_layout
 from om.config import (
     DEFAULT_CHAT_MODEL,
     DEFAULT_EDITOR,
@@ -50,14 +50,14 @@ def command(path: str) -> None:
     # at one, it's already fully scaffolded (typically a clone of a
     # vault from another machine) — leave the directory alone and just
     # record where it lives in `~/.om/config.toml`.
-    if (vault_path / ".om").is_dir() and (vault_path / ".git").is_dir():
+    if vault_layout.om_dir(vault_path).is_dir() and (vault_path / ".git").is_dir():
         config_path = config.save()
         ui.success(f"Adopted existing vault at {vault_path}")
         ui.success(f"Wrote config to {config_path}")
         return
 
     vault_path.mkdir(parents=True, exist_ok=True)
-    (vault_path / ".om").mkdir(exist_ok=True)
+    vault_layout.om_dir(vault_path).mkdir(exist_ok=True)
     git.ensure_initialized(vault_path)
 
     claude_md_path = vault_path / ".claude" / "CLAUDE.md"
@@ -89,7 +89,7 @@ def _validate_vault_path(raw: str) -> str | None:
     if candidate.exists() and not candidate.is_dir():
         return f"{candidate} is not a directory"
     if candidate.is_dir():
-        has_om = (candidate / ".om").is_dir()
+        has_om = vault_layout.om_dir(candidate).is_dir()
         has_git = (candidate / ".git").is_dir()
         if has_om and not has_git:
             return (

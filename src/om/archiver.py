@@ -12,9 +12,8 @@ from __future__ import annotations
 import pathlib
 from datetime import UTC, datetime
 
+from om import vault_layout
 from om.ui import OmError
-
-ARCHIVE_DIRNAME = "archive"
 
 
 def _now_utc() -> datetime:
@@ -31,7 +30,7 @@ def archive_stamp(now: datetime) -> str:
 
 
 def archive_dir(vault: pathlib.Path) -> pathlib.Path:
-    return vault / ".om" / ARCHIVE_DIRNAME
+    return vault_layout.archive_dir(vault)
 
 
 def archive_paths(
