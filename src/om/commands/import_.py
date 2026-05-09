@@ -58,10 +58,7 @@ def granola(ctx: click.Context, since: datetime | None) -> None:
     )
     importer = GranolaImporter(api_key=cfg.granola_api_key)
     stats = sync(cfg.vault, importer, since=since_dt, now=now)
-    click.echo(
-        f"wrote {stats.wrote}, updated {stats.updated}, "
-        f"unchanged {stats.unchanged}, skipped {stats.skipped}"
-    )
+    click.echo(stats.summary())
 
 
 @command.command("web")
@@ -74,7 +71,4 @@ def web(ctx: click.Context, url: str) -> None:
     now = _now_utc()
     importer = WebImporter(url=url, now=now)
     stats = sync(cfg.vault, importer, since=now, now=now)
-    click.echo(
-        f"wrote {stats.wrote}, updated {stats.updated}, "
-        f"unchanged {stats.unchanged}, skipped {stats.skipped}"
-    )
+    click.echo(stats.summary())

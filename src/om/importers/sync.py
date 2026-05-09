@@ -16,7 +16,6 @@ import pathlib
 from dataclasses import dataclass
 from datetime import datetime
 
-import click
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -26,7 +25,7 @@ from rich.progress import (
 )
 
 from om import ui
-from om.frontmatter import Frontmatter, Source, split_document
+from om.frontmatter import Frontmatter, Source, split_document, write_note
 from om.importers import ImportedNote, Importer
 from om.post_edit import PostEditAbort, slugify
 
@@ -37,6 +36,12 @@ class SyncStats:
     updated: int = 0
     unchanged: int = 0
     skipped: int = 0
+
+    def summary(self) -> str:
+        return (
+            f"wrote {self.wrote}, updated {self.updated}, "
+            f"unchanged {self.unchanged}, skipped {self.skipped}"
+        )
 
 
 def sync(
@@ -152,26 +157,20 @@ def _apply(
                 import_url=note.import_url,
                 extra=fm.extra,
             )
-            path.write_text(new_fm.serialize() + note.body_markdown, encoding="utf-8")
+            write_note(path, new_fm, note.body_markdown)
             return "updated"
         return "unchanged"
 
     try:
         title_slug = slugify(note.title)
     except PostEditAbort:
-        click.echo(
-            f"warning: title {note.title!r} produces an empty slug; skipping",
-            err=True,
-        )
+        ui.warn(f"title {note.title!r} produces an empty slug; skipping")
         return "skipped"
 
     date = note.created_at.strftime("%Y-%m-%d")
     path = vault / f"{source}-{date}-{title_slug}.md"
     if path.exists():
-        click.echo(
-            f"warning: {path.name} already exists (different import_id); skipping",
-            err=True,
-        )
+        ui.warn(f"{path.name} already exists (different import_id); skipping")
         return "skipped"
 
     fm = Frontmatter(
@@ -184,5 +183,5 @@ def _apply(
         import_id=note.import_id,
         import_url=note.import_url,
     )
-    path.write_text(fm.serialize() + note.body_markdown, encoding="utf-8")
+    write_note(path, fm, note.body_markdown)
     return "wrote"

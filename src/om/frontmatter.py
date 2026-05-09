@@ -9,6 +9,7 @@ we never lose user data on rewrite.
 
 from __future__ import annotations
 
+import pathlib
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -61,6 +62,11 @@ class Frontmatter:
         lines.extend(self.extra)
         lines.append("---")
         return "\n".join(lines) + "\n"
+
+
+def write_note(path: pathlib.Path, fm: Frontmatter, body: str) -> None:
+    """Write `fm.serialize() + body` to `path` as UTF-8."""
+    path.write_text(fm.serialize() + body, encoding="utf-8")
 
 
 def split_document(text: str) -> tuple[Frontmatter, str] | None:

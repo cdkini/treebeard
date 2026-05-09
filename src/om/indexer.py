@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from om import archiver
-from om.frontmatter import Frontmatter, Source, split_document
+from om.frontmatter import Frontmatter, Source, split_document, write_note
 from om.post_edit import PostEditAbort, slugify
 
 _WIKILINK_UNSAFE_RE = re.compile(r"[\[\]|]")
@@ -193,10 +193,10 @@ def _upsert_index(
             tags=[INDEX_TAG],
             extra=old_fm.extra,
         )
-        path.write_text(new_fm.serialize() + desired_body, encoding="utf-8")
+        write_note(path, new_fm, desired_body)
         return "updated", None
 
     new_fm = Frontmatter.new(tag, now)
     new_fm.tags = [INDEX_TAG]
-    path.write_text(new_fm.serialize() + desired_body, encoding="utf-8")
+    write_note(path, new_fm, desired_body)
     return "wrote", None

@@ -20,7 +20,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from om import dependencies, ui
-from om.frontmatter import Frontmatter, Source, split_document
+from om.frontmatter import Frontmatter, Source, split_document, write_note
 from om.post_edit import reconcile_filename
 from om.ui import OmError
 
@@ -56,7 +56,7 @@ def rewrite_with(path: pathlib.Path, contents: str, mutate: Callable[[Frontmatte
         return
     fm, body = parsed
     mutate(fm)
-    path.write_text(fm.serialize() + body, encoding="utf-8")
+    write_note(path, fm, body)
 
 
 def apply_post_edit(path: pathlib.Path, *, now: datetime) -> pathlib.Path:
