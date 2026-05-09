@@ -19,33 +19,16 @@ from __future__ import annotations
 import pathlib
 import subprocess
 import time
-from datetime import UTC, datetime
 
 import click
 
-from om import fzf, picker, ui
+from om import archiver, fzf, picker, ui
 from om.config import (
     CONFIG_FILENAME,
     DEFAULT_CONFIG_DIR,
     load_config,
 )
-from om.ui import OmError
 from om.vault import list_recent_notes
-
-ARCHIVE_DIRNAME = "archive"
-
-
-def _now_utc() -> datetime:
-    return datetime.now(UTC)
-
-
-def _archive_stamp(now: datetime) -> str:
-    """UTC timestamp safe to use as a filename prefix on every filesystem.
-
-    Colons would break on FAT/exFAT/Windows shares, so we use hyphens for
-    the time portion. The 'Z' suffix keeps the value unambiguously UTC.
-    """
-    return now.strftime("%Y-%m-%dT%H-%M-%SZ")
 
 
 def _run_fzf(lines: list[str], previewer: str) -> list[str]:
@@ -87,24 +70,6 @@ def _selected_paths(rows: list[str]) -> list[pathlib.Path]:
     return paths
 
 
-def _archive_one(source: pathlib.Path, archive_dir: pathlib.Path, stamp: str) -> pathlib.Path:
-    """Move `source` into `archive_dir` with a timestamped prefix.
-
-    The timestamp prefix is appended (not checked-and-suffixed) so the
-    archive is append-only by construction: re-archiving a same-named
-    note after recreating it produces a distinct file every time.
-    """
-    if not source.exists():
-        raise OmError(
-            f"selected file no longer exists: {source}",
-            hint="re-run `om archive`",
-        )
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    target = archive_dir / f"{stamp}__{source.name}"
-    source.rename(target)
-    return target
-
-
 def run(vault: pathlib.Path, previewer: str) -> None:
     """Archive notes selected via fzf. Shared entry for `om archive`."""
     paths = list_recent_notes(vault, None)
@@ -119,13 +84,11 @@ def run(vault: pathlib.Path, previewer: str) -> None:
     if not selected:
         return
 
-    archive_dir = vault / ".om" / ARCHIVE_DIRNAME
-    stamp = _archive_stamp(_now_utc())
+    archiver.archive_paths(vault, selected, now=archiver._now_utc())
     for source in selected:
-        _archive_one(source, archive_dir, stamp)
         ui.success(f"archived {source.name}")
     if len(selected) > 1:
-        ui.info(f"archived {len(selected)} notes to .om/{ARCHIVE_DIRNAME}/")
+        ui.info(f"archived {len(selected)} notes to .om/{archiver.ARCHIVE_DIRNAME}/")
 
 
 @click.command("archive")

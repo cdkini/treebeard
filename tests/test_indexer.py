@@ -47,7 +47,7 @@ def test_below_threshold_no_index(vault: pathlib.Path) -> None:
     stats = build_indexes(vault, now=NOW)
 
     assert (stats.wrote, stats.updated, stats.unchanged, stats.skipped) == (0, 0, 0, 0)
-    assert stats.stale == []
+    assert stats.archived == []
     assert stats.warnings == []
     assert not (vault / "foo.md").exists()
 
@@ -69,9 +69,9 @@ def test_at_threshold_writes_index(vault: pathlib.Path) -> None:
         "tags: [index]\n"
         "---\n"
         "\n"
-        "- [[Alpha]]\n"
-        "- [[Beta]]\n"
-        "- [[gamma]]\n"
+        "- [[a|Alpha]]\n"
+        "- [[b|Beta]]\n"
+        "- [[g|gamma]]\n"
     )
     assert (vault / "foo.md").read_text(encoding="utf-8") == expected
 
@@ -114,10 +114,13 @@ def test_add_note_updates_index(vault: pathlib.Path) -> None:
     assert "created_at: 2026-05-01T00:00:00Z\n" in text
     assert "updated_at: 2026-05-07T14:23:05Z\n" in text
     body_start = text.index("---\n", 4) + len("---\n")
-    assert text[body_start:] == "\n- [[Alpha]]\n- [[Beta]]\n- [[Delta]]\n- [[gamma]]\n"
+    assert text[body_start:] == "\n- [[a|Alpha]]\n- [[b|Beta]]\n- [[d|Delta]]\n- [[g|gamma]]\n"
 
 
-def test_stale_index_reported(vault: pathlib.Path) -> None:
+def test_stale_index_auto_archived(vault: pathlib.Path) -> None:
+    """When a tag falls below THRESHOLD, its index is moved into
+    `.om/archive/` so it stops surfacing in `om open` and stops pointing
+    at notes that may themselves be archived."""
     seed_note(vault, "a", "Alpha", ["foo"])
     seed_note(vault, "b", "Beta", ["foo"])
     seed_note(vault, "g", "gamma", ["foo"])
@@ -130,9 +133,12 @@ def test_stale_index_reported(vault: pathlib.Path) -> None:
     seed_note(vault, "g", "gamma", [])
     s2 = build_indexes(vault, now=NOW)
 
-    assert [p.name for p in s2.stale] == ["foo.md"]
-    # File untouched.
-    assert (vault / "foo.md").read_text(encoding="utf-8") == index_before
+    assert [p.name for p in s2.archived] == ["foo.md"]
+    assert not (vault / "foo.md").exists()
+    archived = vault / ".om" / "archive" / "2026-05-07T14-23-05Z__foo.md"
+    assert archived.exists()
+    # Original body preserved — recovery is a manual `mv` back to root.
+    assert archived.read_text(encoding="utf-8") == index_before
 
 
 def test_index_notes_excluded_from_corpus(vault: pathlib.Path) -> None:
@@ -177,6 +183,64 @@ def test_slugified_tag_filename(vault: pathlib.Path) -> None:
     assert (vault / "q2-2026.md").exists()
     text = (vault / "q2-2026.md").read_text(encoding="utf-8")
     assert "title: Q2-2026\n" in text
+
+
+def test_imported_note_links_resolve_to_filename(vault: pathlib.Path) -> None:
+    """An imported note's filename is `<source>-<date>-<slug>.md` while
+    its title is the human-readable string. The index must link to the
+    on-disk filename so the wikilink resolves, with the title as display
+    text."""
+    seed_note(vault, "granola-2026-05-07-assembly", "Assembly", ["granola"])
+    seed_note(
+        vault,
+        "granola-2026-05-07-data-infra-standup",
+        "Data Infra Standup",
+        ["granola"],
+    )
+    seed_note(
+        vault,
+        "granola-2026-05-03-get-started-with-granola",
+        "Get started with Granola",
+        ["granola"],
+    )
+
+    build_indexes(vault, now=NOW)
+
+    body = (vault / "granola.md").read_text(encoding="utf-8")
+    assert "- [[granola-2026-05-07-assembly|Assembly]]\n" in body
+    assert "- [[granola-2026-05-07-data-infra-standup|Data Infra Standup]]\n" in body
+    assert "- [[granola-2026-05-03-get-started-with-granola|Get started with Granola]]\n" in body
+    # Bare-title wikilinks (the bug) should not appear.
+    assert "[[Assembly]]" not in body
+    assert "[[Data Infra Standup]]" not in body
+
+
+def test_recurring_meetings_with_shared_title(vault: pathlib.Path) -> None:
+    """Two notes with the same title but different filenames (a recurring
+    meeting on different dates) must each appear in the index."""
+    seed_note(vault, "granola-2026-05-01-data-infra-standup", "Data Infra Standup", ["granola"])
+    seed_note(vault, "granola-2026-05-08-data-infra-standup", "Data Infra Standup", ["granola"])
+    seed_note(vault, "granola-2026-05-07-assembly", "Assembly", ["granola"])
+
+    build_indexes(vault, now=NOW)
+
+    body = (vault / "granola.md").read_text(encoding="utf-8")
+    assert body.count("- [[granola-2026-05-01-data-infra-standup|Data Infra Standup]]\n") == 1
+    assert body.count("- [[granola-2026-05-08-data-infra-standup|Data Infra Standup]]\n") == 1
+
+
+def test_wikilink_unsafe_characters_in_title(vault: pathlib.Path) -> None:
+    """Titles containing `[`, `]`, or `|` would break the wikilink syntax;
+    the display half is sanitized while the link target stays intact."""
+    seed_note(vault, "web-2026-05-09-piped-title", "A | piped title", ["web"])
+    seed_note(vault, "web-2026-05-09-bracketed", "Has [brackets] inside", ["web"])
+    seed_note(vault, "web-2026-05-09-plain", "Plain", ["web"])
+
+    build_indexes(vault, now=NOW)
+
+    body = (vault / "web.md").read_text(encoding="utf-8")
+    assert "- [[web-2026-05-09-piped-title|A   piped title]]\n" in body
+    assert "- [[web-2026-05-09-bracketed|Has  brackets  inside]]\n" in body
 
 
 def test_daily_notes_included(vault: pathlib.Path) -> None:

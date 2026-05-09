@@ -11,22 +11,31 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
+from om import archiver as archiver_mod
 from om import dependencies as deps_mod
 from om.cli import cli
 from om.commands import archive as archive_mod
+from om.indexer import build_indexes
 from om.vault import list_recent_notes
 from tests.conftest import write_cfg
 
 
-def _seed_note(vault: pathlib.Path, name: str, title: str, body: str = "body\n") -> pathlib.Path:
+def _seed_note(
+    vault: pathlib.Path,
+    name: str,
+    title: str,
+    body: str = "body\n",
+    tags: list[str] | None = None,
+) -> pathlib.Path:
     path = vault / name
+    tag_list = ", ".join(tags or [])
     path.write_text(
         "---\n"
         f"title: {title}\n"
         "source: user\n"
         "created_at: 2026-05-07T14:23:05Z\n"
         "updated_at: 2026-05-07T14:23:05Z\n"
-        "tags: []\n"
+        f"tags: [{tag_list}]\n"
         "---\n"
         f"{body}",
         encoding="utf-8",
@@ -66,7 +75,7 @@ def _patch_fzf(
 
 
 def _freeze_archive_clock(monkeypatch: pytest.MonkeyPatch, value: datetime) -> None:
-    monkeypatch.setattr(archive_mod, "_now_utc", lambda: value)
+    monkeypatch.setattr(archiver_mod, "_now_utc", lambda: value)
 
 
 def _git_log_subject(vault: pathlib.Path) -> str:
@@ -290,3 +299,39 @@ def test_preview_uses_configured_previewer(
     preview_flag = next((a for a in cmd if a.startswith("--preview=")), None)
     assert preview_flag is not None
     assert "bat" in preview_flag
+
+
+def test_archive_drops_index_below_threshold(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Archiving a note that brings a tag's count below THRESHOLD (3)
+    must auto-archive the now-orphaned per-tag index, not leave it at
+    root pointing at the archived note."""
+    write_cfg(cfg_dir, vault)
+    _seed_note(vault, "alpha.md", "Alpha", tags=["foo"])
+    _seed_note(vault, "beta.md", "Beta", tags=["foo"])
+    target = _seed_note(vault, "gamma.md", "Gamma", tags=["foo"])
+
+    # Materialize the index up front so the close-hook indexer pass
+    # finds it stale rather than skipping (count=3, then archive → 2).
+    build_indexes(vault, now=datetime(2026, 5, 7, 14, 0, 0, tzinfo=UTC))
+    assert (vault / "foo.md").exists()
+
+    _patch_fzf_present(monkeypatch)
+    _patch_fzf(monkeypatch, stdout=f"gamma  just now\t{target}\n")
+    _freeze_archive_clock(monkeypatch, datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC))
+
+    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    assert result.exit_code == 0, result.output
+
+    assert not target.exists()
+    assert not (vault / "foo.md").exists(), "stale index left at vault root"
+    archive_dir = vault / ".om" / "archive"
+    assert (archive_dir / "2026-05-07T14-23-05Z__gamma.md").exists()
+    # The indexer pass runs inside `_on_close` with a real-clock `now`,
+    # so the stale index gets a wallclock stamp distinct from the
+    # frozen one used for the user-archived note. Assert by suffix.
+    assert any(p.name.endswith("__foo.md") for p in archive_dir.iterdir())
