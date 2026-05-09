@@ -22,4 +22,4 @@ fmt:
 	uv run ruff check --fix .
 
 test:
-	uv run pytest --cov --cov-report=term-missing --cov-report=html
+	uv run pytest -n auto --cov --cov-report=term-missing --cov-report=html
