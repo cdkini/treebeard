@@ -184,7 +184,7 @@ def test_first_import_writes_notes(
     assert "import_source: granola" in a
     assert "import_id: not_aaaaaaaaaaaaaa" in a
     assert "import_url: https://notes.granola.ai/d/not_aaaaaaaaaaaaaa" in a
-    assert "tags: [meeting]" in a
+    assert "tags: [granola]" in a
     assert "Discussed the roadmap." in a
     assert "## Transcript" in a
     assert "**Sarah:** Hey there." in a

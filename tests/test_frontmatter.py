@@ -118,7 +118,7 @@ def test_import_note_round_trip() -> None:
         "source: import\n"
         "created_at: 2026-05-07T14:23:05Z\n"
         "updated_at: 2026-05-07T15:00:00Z\n"
-        "tags: [meeting]\n"
+        "tags: [granola]\n"
         "import_source: granola\n"
         "import_id: not_abc12345678901\n"
         "import_url: https://notes.granola.ai/d/not_abc12345678901\n"

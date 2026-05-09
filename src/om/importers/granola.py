@@ -119,7 +119,7 @@ def _to_imported_note(note: dict[str, Any]) -> ImportedNote:
         created_at=created_at,
         updated_at=updated_at,
         body_markdown=_render_body(note),
-        tags=["meeting"],
+        tags=["granola"],
     )
 
 
