@@ -1,4 +1,4 @@
-.PHONY: install sync hooks lint fmt test uninstall
+.PHONY: install sync hooks lint fmt test ci uninstall
 
 sync:
 	uv sync
@@ -23,3 +23,5 @@ fmt:
 
 test:
 	uv run pytest -n auto --cov --cov-report=term-missing --cov-report=html
+
+ci: lint test

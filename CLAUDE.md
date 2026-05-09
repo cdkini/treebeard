@@ -40,6 +40,7 @@ make hooks         # one-time: install pre-commit (ruff only)
 make fmt           # ruff format + ruff check --fix
 make lint          # ruff check + ruff format --check + basedpyright
 make test          # pytest with coverage (term + htmlcov/)
+make ci            # lint + test (run before declaring work done)
 make uninstall     # uv tool uninstall omniscience
 ```
 
@@ -93,4 +94,4 @@ Autouse fixtures sandbox `HOME` and the default config dir, so tests cannot touc
 
 ## Before declaring work done
 
-`make lint` and `make test` must both pass. The pre-commit hook only runs ruff (format + auto-fix), so basedpyright type errors are *not* caught at commit time — run `make lint` explicitly.
+`make ci` (lint + test) must pass. The pre-commit hook only runs ruff (format + auto-fix), so basedpyright type errors are *not* caught at commit time — `make ci` is the gate.
