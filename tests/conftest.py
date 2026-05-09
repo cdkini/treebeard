@@ -151,10 +151,25 @@ def mock_claude_sdk(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
       - `usage`: dict — AssistantMessage.usage and ResultMessage.usage
       - `stop_reason`: str — AssistantMessage.stop_reason
       - `cost_usd`: float — ResultMessage.total_cost_usd
+      - `duration_ms`: int — ResultMessage.duration_ms (per-turn footer)
       - `queries`: list[str] — user prompts the stub saw
       - `raise`: exception to raise from query() once, then auto-clear
+      - `tool_calls`: list[list[dict]] — per-turn tool calls. Each dict
+        is `{"name": str, "input": dict, "result": str|list, "is_error":
+        bool}`. When the inner list is non-empty, `receive_response`
+        emits an extra `AssistantMessage`/`UserMessage` pair carrying
+        the tool-use and tool-result blocks before the text reply, in
+        the same order the real SDK would.
     """
-    from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+    from claude_agent_sdk import (
+        AssistantMessage,
+        ContentBlock,
+        ResultMessage,
+        TextBlock,
+        ToolResultBlock,
+        ToolUseBlock,
+        UserMessage,
+    )
 
     state: dict[str, Any] = {
         "replies": [["hello", " world"]],
@@ -162,9 +177,19 @@ def mock_claude_sdk(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "usage": {"input_tokens": 3, "output_tokens": 2},
         "stop_reason": "end_turn",
         "cost_usd": 0.0,
+        "duration_ms": 10,
         "queries": [],
         "raise": None,
+        "tool_calls": [],
     }
+
+    def _tool_calls_for(idx: int) -> list[dict[str, Any]]:
+        calls = state["tool_calls"]
+        if not calls:
+            return []
+        if idx < len(calls):
+            return calls[idx]
+        return []
 
     class _FakeClient:
         async def __aenter__(self) -> _FakeClient:
@@ -183,6 +208,39 @@ def mock_claude_sdk(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         async def receive_response(self) -> Any:
             idx = len(state["queries"]) - 1
             chunks = state["replies"][idx] if idx < len(state["replies"]) else state["replies"][-1]
+
+            tool_calls = _tool_calls_for(idx)
+            if tool_calls:
+                tool_blocks: list[ContentBlock] = [
+                    ToolUseBlock(id=f"tool_{i}", name=tc["name"], input=tc["input"])
+                    for i, tc in enumerate(tool_calls)
+                ]
+                yield AssistantMessage(
+                    content=tool_blocks,
+                    model=state["model"],
+                    parent_tool_use_id=None,
+                    error=None,
+                    usage=None,
+                    message_id=None,
+                    stop_reason="tool_use",
+                    session_id=None,
+                    uuid=None,
+                )
+                result_blocks: list[ContentBlock] = [
+                    ToolResultBlock(
+                        tool_use_id=f"tool_{i}",
+                        content=tc["result"],
+                        is_error=tc.get("is_error", False),
+                    )
+                    for i, tc in enumerate(tool_calls)
+                ]
+                yield UserMessage(
+                    content=result_blocks,
+                    uuid=None,
+                    parent_tool_use_id=None,
+                    tool_use_result=None,
+                )
+
             yield AssistantMessage(
                 content=[TextBlock(text=c) for c in chunks],
                 model=state["model"],
@@ -196,7 +254,7 @@ def mock_claude_sdk(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             )
             yield ResultMessage(
                 subtype="success",
-                duration_ms=10,
+                duration_ms=state["duration_ms"],
                 duration_api_ms=8,
                 is_error=False,
                 num_turns=1,

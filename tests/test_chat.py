@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 from typing import Any
 
+import pytest
 from claude_agent_sdk import ClaudeSDKError
 from click.testing import CliRunner
 
@@ -617,20 +618,537 @@ def test_draft_falls_back_to_scratch_when_title_unslugifiable(
     assert "source: [user, llm]\n" in text
 
 
-def test_slash_dispatcher_bare_aliases_still_exit(
+def test_slash_dispatcher_bare_alias_still_exits(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     mock_claude_sdk: dict[str, Any],
     freeze_now: list[Any],
 ) -> None:
-    """Regression on the dispatcher refactor: the bare aliases `exit`
-    and `quit` (no leading slash) must still terminate the REPL
+    """The bare `exit` alias (no leading slash) must terminate the REPL
     without sending the literal string to the model."""
     del freeze_now
     write_cfg(cfg_dir, vault)
-    for word in ("exit", "quit", "/quit"):
-        mock_claude_sdk["queries"].clear()
-        result = runner.invoke(cli, ["chat"], input=f"{word}\n")
-        assert result.exit_code == 0, (word, result.output)
-        assert mock_claude_sdk["queries"] == [], (word, mock_claude_sdk["queries"])
+    result = runner.invoke(cli, ["chat"], input="exit\n")
+    assert result.exit_code == 0, result.output
+    assert mock_claude_sdk["queries"] == []
+
+
+# ---------------------------------------------------------------------------
+# Per-turn UI: tool cards + footer (driven by TurnRenderer)
+# ---------------------------------------------------------------------------
+
+
+def test_tool_use_block_renders_tool_card(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """A successful tool call should surface in the REPL output in
+    plain mode as `[tool: Read foo.md]` (running) followed by
+    `[tool: ✓ Read foo.md] <summary>` (resolved)."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["tool_calls"] = [
+        [
+            {
+                "name": "Read",
+                "input": {"file_path": "foo.md"},
+                "result": "First line of contents",
+                "is_error": False,
+            }
+        ]
+    ]
+    result = runner.invoke(cli, ["chat"], input="hi\n")
+    assert result.exit_code == 0, result.output
+    assert "[tool: Read foo.md]" in result.output
+    assert "[tool: ✓ Read foo.md]" in result.output
+    assert "First line of contents" in result.output
+
+
+def test_tool_error_renders_error_card(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """`is_error=True` should flip the resolved card to ✗ + error snippet."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["tool_calls"] = [
+        [
+            {
+                "name": "Read",
+                "input": {"file_path": "missing.md"},
+                "result": "file not found",
+                "is_error": True,
+            }
+        ]
+    ]
+    result = runner.invoke(cli, ["chat"], input="hi\n")
+    assert result.exit_code == 0, result.output
+    assert "[tool: ✗ Read missing.md]" in result.output
+    assert "file not found" in result.output
+
+
+def test_archive_guard_denial_surfaces_in_chat_ui(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """When the archive-guard hook denies a Read, chat must surface
+    that to the user — not silently swallow the deny."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    deny_msg = (
+        "`.om/archive` is off-limits to chat — these notes were "
+        "archived intentionally and must not be read or searched."
+    )
+    mock_claude_sdk["tool_calls"] = [
+        [
+            {
+                "name": "Read",
+                "input": {"file_path": ".om/archive/old.md"},
+                "result": deny_msg,
+                "is_error": True,
+            }
+        ]
+    ]
+    result = runner.invoke(cli, ["chat"], input="hi\n")
+    assert result.exit_code == 0, result.output
+    assert "archive denied" in result.output
+
+
+def test_per_turn_footer_shows_model_tokens_cost_duration(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """The dim footer line lands after every reply with model, tokens,
+    cost, and duration."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["cost_usd"] = 0.0123
+    mock_claude_sdk["duration_ms"] = 4234
+    mock_claude_sdk["usage"] = {"input_tokens": 1234, "output_tokens": 340}
+    result = runner.invoke(cli, ["chat"], input="hi\n")
+    assert result.exit_code == 0, result.output
+    # Compact footer pieces — assert the substrings, not the whole line.
+    assert "claude-sonnet-4-6" in result.output
+    assert "1.2k in / 340 out" in result.output
+    assert "$0.0123" in result.output
+    assert "4.2s" in result.output
+
+
+def test_per_turn_footer_subscription_when_cost_zero_or_none(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """Cost of 0.0 or None should render `subscription`, not `$0.0000`,
+    matching the session-summary convention."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["cost_usd"] = None
+    result = runner.invoke(cli, ["chat"], input="hi\n/exit\n")
+    assert result.exit_code == 0, result.output
+    assert "subscription" in result.output
+    # No literal dollar sign should leak — both per-turn footer and
+    # session summary print `subscription` for free / unmetered turns.
+    assert "$" not in result.output
+
+
+def test_tool_label_formatting_unit() -> None:
+    """`tool_label` builds compact titles from each tool's input shape."""
+    from claude_agent_sdk import ToolUseBlock
+
+    from om.chat_ui import tool_label
+
+    cases: list[tuple[ToolUseBlock, str]] = [
+        (ToolUseBlock(id="x", name="Read", input={"file_path": "notes/foo.md"}), "Read foo.md"),
+        (ToolUseBlock(id="x", name="Glob", input={"pattern": "*.md"}), "Glob *.md"),
+        (
+            ToolUseBlock(id="x", name="Glob", input={"pattern": "*.md", "path": "daily"}),
+            "Glob *.md in daily",
+        ),
+        (
+            ToolUseBlock(id="x", name="Grep", input={"pattern": "TODO"}),
+            'Grep "TODO"',
+        ),
+        (
+            ToolUseBlock(id="x", name="Grep", input={"pattern": "TODO", "path": "notes"}),
+            'Grep "TODO" in notes',
+        ),
+        (
+            ToolUseBlock(id="x", name="WebFetch", input={"url": "https://anthropic.com/news"}),
+            "WebFetch anthropic.com",
+        ),
+        (
+            ToolUseBlock(id="x", name="WebSearch", input={"query": "claude code"}),
+            'WebSearch "claude code"',
+        ),
+        # Unknown tool: bare name, no arg echo.
+        (ToolUseBlock(id="x", name="Mystery", input={"arg": "value"}), "Mystery"),
+        # Known tool with malformed input: degrade to bare name.
+        (ToolUseBlock(id="x", name="Read", input={}), "Read"),
+    ]
+    for block, expected in cases:
+        assert tool_label(block).plain == expected, (block.name, block.input)
+
+
+def test_format_token_count_unit() -> None:
+    """`format_token_count` collapses thousands tidily."""
+    from om.chat_ui import format_token_count
+
+    assert format_token_count(0) == "0"
+    assert format_token_count(42) == "42"
+    assert format_token_count(999) == "999"
+    assert format_token_count(1000) == "1k"
+    assert format_token_count(1234) == "1.2k"
+    assert format_token_count(12345) == "12.3k"
+
+
+def test_format_duration_unit() -> None:
+    """Sub-second durations stay in ms; otherwise 1 decimal of seconds."""
+    from om.chat_ui import format_duration
+
+    assert format_duration(50) == "50ms"
+    assert format_duration(999) == "999ms"
+    assert format_duration(1000) == "1.0s"
+    assert format_duration(4234) == "4.2s"
+
+
+def test_summarize_tool_result_unit() -> None:
+    """Result summaries: first line truncated, item counts for lists,
+    archive denial surfaces with friendly prefix."""
+    from claude_agent_sdk import ToolResultBlock
+
+    from om.chat_ui import summarize_tool_result
+
+    # Short string content → first non-empty line.
+    assert (
+        summarize_tool_result(ToolResultBlock(tool_use_id="x", content="hello world"))
+        == "hello world"
+    )
+    # Multi-line — pick first non-empty.
+    assert (
+        summarize_tool_result(ToolResultBlock(tool_use_id="x", content="\n\nfirst\nsecond"))
+        == "first"
+    )
+    # Long line → truncated with ellipsis.
+    long = "x" * 200
+    summary = summarize_tool_result(ToolResultBlock(tool_use_id="x", content=long))
+    assert summary.endswith("…")
+    assert len(summary) <= 80
+    # Archive denial substring → friendly prefix.
+    deny = "`.om/archive` is off-limits to chat — etc"
+    assert summarize_tool_result(
+        ToolResultBlock(tool_use_id="x", content=deny, is_error=True)
+    ).startswith("archive denied:")
+    # List of dicts with text → first text.
+    assert (
+        summarize_tool_result(
+            ToolResultBlock(
+                tool_use_id="x",
+                content=[{"type": "text", "text": "matched 7 lines"}],
+            )
+        )
+        == "matched 7 lines"
+    )
+    # List with no text entries → item count.
+    assert (
+        summarize_tool_result(
+            ToolResultBlock(tool_use_id="x", content=[{"type": "image"}, {"type": "image"}])
+        )
+        == "2 items"
+    )
+    # Empty / None → done.
+    assert summarize_tool_result(ToolResultBlock(tool_use_id="x", content=None)) == "done"
+
+
+def test_spinner_text_for_unit() -> None:
+    """Spinner labels reflect what the model is actually doing."""
+    from om.chat_ui import SpinnerState, spinner_text_for
+
+    assert spinner_text_for(SpinnerState.AWAIT) == "thinking…"
+    assert spinner_text_for(SpinnerState.COMPOSING) == "composing reply…"
+    assert spinner_text_for(SpinnerState.TOOL, "Read") == "reading notes…"
+    assert spinner_text_for(SpinnerState.TOOL, "Glob") == "searching paths…"
+    assert spinner_text_for(SpinnerState.TOOL, "Grep") == "searching content…"
+    assert spinner_text_for(SpinnerState.TOOL, "WebFetch") == "fetching…"
+    assert spinner_text_for(SpinnerState.TOOL, "web_fetch") == "fetching…"
+    assert spinner_text_for(SpinnerState.TOOL, "WebSearch") == "searching the web…"
+    assert spinner_text_for(SpinnerState.TOOL, None) == "working…"
+    assert spinner_text_for(SpinnerState.TOOL, "Custom") == "working with Custom…"
+
+
+def test_turn_renderer_tty_mode_renders_response_and_footer(vault: pathlib.Path) -> None:
+    """Direct test of `TurnRenderer` in TTY mode: streams text via
+    StreamEvents into a Live, then renders a tool card and footer.
+    Asserts on the captured Console output rather than the CLI path,
+    because `CliRunner` is always non-TTY."""
+    import asyncio
+    import io
+
+    from claude_agent_sdk import (
+        AssistantMessage,
+        ResultMessage,
+        StreamEvent,
+        TextBlock,
+        ToolResultBlock,
+        ToolUseBlock,
+        UserMessage,
+    )
+    from rich.console import Console
+
+    from om.chat_ui import TurnRenderer
+
+    del vault  # Just need a fixture for monkeypatched defaults.
+
+    buf = io.StringIO()
+    out = Console(
+        file=buf,
+        force_terminal=True,
+        width=120,
+        legacy_windows=False,
+    )
+
+    async def drive() -> None:
+        renderer = TurnRenderer(out)
+        # 1) StreamEvent text deltas (open the text Live).
+        for chunk in ("Hello", " world"):
+            await renderer.consume(
+                StreamEvent(
+                    uuid="u",
+                    session_id="s",
+                    event={
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": chunk},
+                    },
+                    parent_tool_use_id=None,
+                )
+            )
+        # 2) StreamEvent tool_use start (swap spinner).
+        await renderer.consume(
+            StreamEvent(
+                uuid="u",
+                session_id="s",
+                event={
+                    "type": "content_block_start",
+                    "content_block": {"type": "tool_use", "name": "Read"},
+                },
+                parent_tool_use_id=None,
+            )
+        )
+        # 3) AssistantMessage with text + tool use.
+        await renderer.consume(
+            AssistantMessage(
+                content=[
+                    TextBlock(text="Hello world"),
+                    ToolUseBlock(id="t1", name="Read", input={"file_path": "foo.md"}),
+                ],
+                model="claude-sonnet-4-6",
+                parent_tool_use_id=None,
+                error=None,
+                usage={"input_tokens": 10, "output_tokens": 5},
+                message_id=None,
+                stop_reason="tool_use",
+                session_id=None,
+                uuid=None,
+            )
+        )
+        # 4) UserMessage with tool result.
+        await renderer.consume(
+            UserMessage(
+                content=[
+                    ToolResultBlock(tool_use_id="t1", content="ok", is_error=False),
+                ],
+                uuid=None,
+                parent_tool_use_id=None,
+                tool_use_result=None,
+            )
+        )
+        # 5) Final AssistantMessage + ResultMessage.
+        await renderer.consume(
+            AssistantMessage(
+                content=[TextBlock(text="Done.")],
+                model="claude-sonnet-4-6",
+                parent_tool_use_id=None,
+                error=None,
+                usage={"input_tokens": 12, "output_tokens": 6},
+                message_id=None,
+                stop_reason="end_turn",
+                session_id=None,
+                uuid=None,
+            )
+        )
+        await renderer.consume(
+            ResultMessage(
+                subtype="success",
+                duration_ms=1500,
+                duration_api_ms=8,
+                is_error=False,
+                num_turns=1,
+                session_id="s",
+                stop_reason="end_turn",
+                total_cost_usd=0.0042,
+                usage=None,
+                result=None,
+                structured_output=None,
+                model_usage=None,
+                permission_denials=None,
+                deferred_tool_use=None,
+                errors=None,
+                api_error_status=None,
+                uuid=None,
+            )
+        )
+        summary = renderer.finalize()
+        # Summary text comes from assembled AssistantMessage TextBlocks.
+        assert "Hello world" in summary.text
+        assert "Done." in summary.text
+        assert summary.cost_usd == 0.0042
+        assert summary.duration_ms == 1500
+        assert summary.model == "claude-sonnet-4-6"
+
+    asyncio.run(drive())
+    output = buf.getvalue()
+    # Rich panel borders (any of the box-drawing variants Rich uses).
+    assert "Read" in output
+    assert "foo.md" in output
+    # Footer made it through.
+    assert "claude-sonnet-4-6" in output
+    assert "$0.0042" in output
+    assert "1.5s" in output
+
+
+def test_turn_renderer_finalize_is_idempotent() -> None:
+    """Calling finalize() twice must not double-print the footer or
+    crash. Important so the Ctrl-C path can call it defensively."""
+    import io
+
+    from rich.console import Console
+
+    from om.chat_ui import TurnRenderer
+
+    buf = io.StringIO()
+    out = Console(file=buf, force_terminal=False, width=120)
+    renderer = TurnRenderer(out)
+    first = renderer.finalize()
+    second = renderer.finalize()
+    assert first == second
+    # The footer prints `subscription` (no model, no usage, no cost).
+    assert buf.getvalue().count("subscription") == 1
+
+
+def test_slash_completer_suggests_only_when_buffer_starts_with_slash() -> None:
+    """The completer is silent on prose and offers slash commands when
+    the buffer starts with `/`. Suggestions come from `SLASH_HANDLERS`
+    so adding a new handler automatically lights up in tab completion."""
+    from prompt_toolkit.document import Document
+
+    from om.chat import SLASH_HANDLERS, _SlashCompleter
+
+    completer = _SlashCompleter(SLASH_HANDLERS.keys())
+
+    # Empty buffer / prose: no suggestions.
+    assert list(completer.get_completions(Document(""), None)) == []
+    assert list(completer.get_completions(Document("hello"), None)) == []
+
+    # `/` alone: every slash command in handler dict, alphabetized.
+    suggestions = [c.text for c in completer.get_completions(Document("/"), None)]
+    assert suggestions == sorted(c for c in SLASH_HANDLERS if c.startswith("/"))
+
+    # Prefix narrows the list.
+    suggestions = [c.text for c in completer.get_completions(Document("/d"), None)]
+    assert suggestions == ["/draft"]
+
+    # Bare `exit` alias (no leading slash) is not surfaced — it's a
+    # usability fallback, not a menu item.
+    suggestions = [c.text for c in completer.get_completions(Document("e"), None)]
+    assert suggestions == []
+
+    # Completion rewrites from cursor back to start of buffer so the
+    # full command lands cleanly.
+    completions = list(completer.get_completions(Document("/d"), None))
+    assert completions[0].start_position == -2
+
+
+def test_build_prompt_session_returns_none_when_stdin_not_a_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When stdin isn't a TTY (CliRunner, pipes), prompt_toolkit must
+    not be initialised — the `input()` fallback path takes over."""
+    from om.chat import _build_prompt_session
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    assert _build_prompt_session() is None
+
+
+def test_build_prompt_session_constructs_when_stdin_is_a_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When stdin is a TTY, `_build_prompt_session` returns a real
+    PromptSession wired up with the slash completer."""
+    from prompt_toolkit import PromptSession
+
+    from om.chat import _build_prompt_session, _SlashCompleter
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    session = _build_prompt_session()
+    assert isinstance(session, PromptSession)
+    assert isinstance(session.completer, _SlashCompleter)
+
+
+def test_turn_renderer_close_all_lives_marks_pending_tools_interrupted() -> None:
+    """If a turn is interrupted (Ctrl-C) before tool results arrive,
+    cleanup must close any open tool-card Lives so the terminal isn't
+    left with a frozen spinner. Plain mode is silent on interrupt; we
+    verify the renderer reaches a clean state."""
+    import asyncio
+    import io
+
+    from claude_agent_sdk import AssistantMessage, ToolUseBlock
+    from rich.console import Console
+
+    from om.chat_ui import TurnRenderer
+
+    buf = io.StringIO()
+    out = Console(file=buf, force_terminal=True, width=120, legacy_windows=False)
+    renderer = TurnRenderer(out)
+
+    async def drive() -> None:
+        await renderer.consume(
+            AssistantMessage(
+                content=[ToolUseBlock(id="t1", name="Read", input={"file_path": "foo.md"})],
+                model="claude-sonnet-4-6",
+                parent_tool_use_id=None,
+                error=None,
+                usage=None,
+                message_id=None,
+                stop_reason="tool_use",
+                session_id=None,
+                uuid=None,
+            )
+        )
+
+    asyncio.run(drive())
+    # Simulate Ctrl-C: finalize without ever delivering a UserMessage.
+    renderer.finalize()
+    # All lives should be closed.
+    assert renderer._text_live is None
+    assert renderer._outer_live is None
+    for pending in renderer._pending_tools.values():
+        assert pending.resolved is True
+        assert pending.live is None
+    output = buf.getvalue()
+    assert "interrupted" in output

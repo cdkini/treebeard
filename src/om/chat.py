@@ -8,10 +8,12 @@ conversation history inside the session. Every turn is appended to
 `<vault>/.om/conversations/chat-<UTC-timestamp>.jsonl` so the auto-commit
 hook on CLI close picks it up.
 
-Rendering uses Rich: a header `Panel` at startup, then per-turn live
-Markdown rendering inside a `rich.live.Live` context so code blocks,
-lists, and headings flow as the model emits tokens. Falls back to plain
-streaming when stdout isn't a TTY (e.g. piped output, tests).
+Per-turn rendering lives in `om.chat_ui.TurnRenderer`: streamed Markdown
+body, bordered tool-call cards (running spinner → ✓/✗ summary as the
+model invokes Read/Glob/Grep/WebFetch/WebSearch), and a dim footer line
+with `model · tokens · cost · duration` after each reply. The renderer
+falls back to a plain-text path when stdout isn't a TTY so pipes and
+tests stay stable.
 """
 
 from __future__ import annotations
@@ -20,31 +22,31 @@ import asyncio
 import json
 import pathlib
 import re
-from collections.abc import Awaitable, Callable
+import sys
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import resources
 from typing import Any
 
 from claude_agent_sdk import (
-    AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ClaudeSDKError,
     HookMatcher,
-    ResultMessage,
-    StreamEvent,
-    TextBlock,
     ThinkingConfigDisabled,
 )
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.document import Document
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.history import InMemoryHistory
 from rich.console import Console
-from rich.live import Live
-from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.spinner import Spinner
 from rich.text import Text
 
 from om import ui, vault_layout
+from om.chat_ui import TurnRenderer
 from om.frontmatter import Source
 from om.timefmt import now_utc
 from om.ui import status_console
@@ -103,7 +105,6 @@ SlashHandler = Callable[
 SLASH_COMMANDS: tuple[tuple[str, str], ...] = (
     ("/draft", "synthesize the conversation into a note, then exit"),
     ("/exit", "end the session"),
-    ("/quit", "end the session"),
 )
 
 
@@ -222,12 +223,13 @@ async def _repl_async(vault: pathlib.Path, model: str) -> None:
     out = Console(highlight=False)
 
     _render_header(vault, transcript, model)
+    session = _build_prompt_session()
 
     try:
         async with _make_client(vault, model) as client:
             while True:
                 try:
-                    user_text = await asyncio.to_thread(_read_line)
+                    user_text = await asyncio.to_thread(_read_line, session)
                 except EOFError:
                     out.print()
                     break
@@ -279,10 +281,11 @@ def _render_header(vault: pathlib.Path, transcript: pathlib.Path, model: str) ->
         ("commands   ", "dim"),
     ]
     sorted_commands = sorted(SLASH_COMMANDS, key=lambda pair: pair[0])
+    cmd_width = max(len(cmd) for cmd, _ in sorted_commands)
     for index, (cmd, blurb) in enumerate(sorted_commands):
         if index > 0:
             parts.append(("\n           ", "dim"))
-        parts.append((f"{cmd}  ", "white"))
+        parts.append((f"{cmd.ljust(cmd_width)}  ", "white"))
         parts.append((blurb, "dim"))
     body = Text.assemble(*parts)
     status_console.print(
@@ -362,14 +365,60 @@ def _render_summary(transcript: pathlib.Path) -> None:
     )
 
 
-def _read_line() -> str:
+class _SlashCompleter(Completer):
+    """Tab-complete `/` commands from `SLASH_HANDLERS`.
+
+    Triggers only when the buffer starts with `/` so normal prose
+    doesn't get peppered with menu popups. The completion list is
+    sourced from the live handler dict (filtered to slash forms — the
+    bare `exit`/`quit` aliases are usability fallbacks, not something
+    we want to suggest in a menu).
+    """
+
+    def __init__(self, commands: Iterable[str]) -> None:
+        self._commands = sorted(c for c in commands if c.startswith("/"))
+
+    def get_completions(self, document: Document, complete_event: Any) -> Iterable[Completion]:
+        del complete_event
+        text = document.text_before_cursor
+        if not text.startswith("/"):
+            return
+        for cmd in self._commands:
+            if cmd.startswith(text):
+                yield Completion(cmd, start_position=-len(text))
+
+
+def _build_prompt_session() -> PromptSession[str] | None:
+    """Construct a `PromptSession` for interactive stdin, or `None`
+    when stdin isn't a TTY.
+
+    Returning `None` triggers the `input()` fallback in `_read_line` —
+    the path tests rely on. `prompt_toolkit` would otherwise try to
+    open `/dev/tty` directly and fight with `CliRunner`'s pipe.
+    """
+    if not sys.stdin.isatty():
+        return None
+    return PromptSession(
+        completer=_SlashCompleter(SLASH_HANDLERS.keys()),
+        history=InMemoryHistory(),
+        complete_while_typing=False,
+    )
+
+
+def _read_line(session: PromptSession[str] | None) -> str:
     """Blocking stdin read — runs in a thread so it doesn't block the
-    event loop. Click's `prompt` doesn't compose with asyncio cleanly."""
-    # Pre-print the styled glyph to stderr (so it survives stdout piping
-    # while still being visible interactively); then a plain `input()`
-    # with no further prompt does the line read.
-    status_console.print(f"[bold cyan]{PROMPT_GLYPH}[/bold cyan] ", end="")
-    return input()
+    event loop. Uses `prompt_toolkit` when interactive (tab completion
+    on `/` commands, history within the session); falls back to plain
+    `input()` when `session is None` (non-TTY: pipes, tests).
+
+    The `prompt_toolkit` path renders the glyph itself via the prompt
+    HTML; the fallback pre-prints the glyph to stderr so it shows up
+    even when stdout is piped.
+    """
+    if session is None:
+        status_console.print(f"[bold cyan]{PROMPT_GLYPH}[/bold cyan] ", end="")
+        return input()
+    return session.prompt(HTML(f"<ansibrightcyan><b>{PROMPT_GLYPH}</b></ansibrightcyan> "))
 
 
 async def _run_turn(
@@ -378,96 +427,34 @@ async def _run_turn(
     out: Console,
     transcript: pathlib.Path,
 ) -> str:
-    """Drive one turn: render Markdown live as deltas arrive, then log
-    the final AssistantMessage + ResultMessage to the JSONL transcript.
+    """Drive one turn: stream the response through `TurnRenderer`, then
+    log the assistant turn to the JSONL transcript.
 
-    Text source of truth is the assembled content from `AssistantMessage`
-    (authoritative — deltas can in theory be revised). The Live panel is
-    fed the running buffer of stream deltas; if no deltas arrive (older
-    CLIs, non-streaming responses), we render the assembled message once
-    at the end.
-
-    Returns the assistant's reply text — `final_text` from
-    `AssistantMessage` if available, else the assembled stream buffer.
-    The REPL ignores it; `_handle_draft` uses it to parse the synthesis
-    sentinel block.
+    Returns the assembled assistant text. The REPL ignores it;
+    `_handle_draft` uses it to parse the synthesis sentinel block.
     """
     await client.query(user_text)
-    buffer: list[str] = []
-    final_text = ""
-    model: str | None = None
-    usage: dict[str, Any] | None = None
-    stop_reason: str | None = None
-    cost_usd: float | None = None
-
-    # Start with a spinner so the user can see the system is working
-    # while we wait for the first token. Swap the renderable to a
-    # Markdown panel as soon as text arrives.
-    with Live(
-        Spinner("dots", text=Text("thinking…", style="dim")),
-        console=out,
-        refresh_per_second=12,
-        transient=False,
-        vertical_overflow="visible",
-    ) as live:
-        first_text_seen = False
-        async for msg in client.receive_response():
-            if isinstance(msg, StreamEvent):
-                delta_text = _extract_text_delta(msg.event)
-                if delta_text:
-                    buffer.append(delta_text)
-                    first_text_seen = True
-                    live.update(Markdown("".join(buffer)))
-            elif isinstance(msg, AssistantMessage):
-                text_blocks = [b.text for b in msg.content if isinstance(b, TextBlock)]
-                assembled = "".join(text_blocks)
-                final_text = assembled
-                if not first_text_seen and assembled:
-                    # No StreamEvents arrived; render the assembled
-                    # message into the Live panel in one shot.
-                    live.update(Markdown(assembled))
-                    first_text_seen = True
-                model = msg.model
-                if msg.usage is not None:
-                    usage = msg.usage
-                if msg.stop_reason is not None:
-                    stop_reason = msg.stop_reason
-            elif isinstance(msg, ResultMessage):
-                cost_usd = msg.total_cost_usd
-                if msg.usage is not None and usage is None:
-                    usage = msg.usage
-                if msg.stop_reason is not None and stop_reason is None:
-                    stop_reason = msg.stop_reason
+    renderer = TurnRenderer(out)
+    async for msg in client.receive_response():
+        await renderer.consume(msg)
+    summary = renderer.finalize()
 
     # Thin separator between turns (dim rule, no body).
     status_console.rule(style="dim")
 
-    content = final_text or "".join(buffer)
-    record: dict[str, Any] = {
-        "ts": now_utc().isoformat(),
-        "role": "assistant",
-        "content": content,
-        "model": model,
-        "usage": usage,
-        "stop_reason": stop_reason,
-        "cost_usd": cost_usd,
-    }
-    append_jsonl(transcript, record)
-    return content
-
-
-def _extract_text_delta(event: dict[str, Any]) -> str:
-    """Pull a text fragment out of a raw Anthropic stream event, or
-    return ''. Handles `content_block_delta` / `text_delta` shapes."""
-    if event.get("type") != "content_block_delta":
-        return ""
-    delta = event.get("delta")
-    if not isinstance(delta, dict):
-        return ""
-    if delta.get("type") != "text_delta":
-        return ""
-    text = delta.get("text")
-    return text if isinstance(text, str) else ""
+    append_jsonl(
+        transcript,
+        {
+            "ts": now_utc().isoformat(),
+            "role": "assistant",
+            "content": summary.text,
+            "model": summary.model,
+            "usage": summary.usage,
+            "stop_reason": summary.stop_reason,
+            "cost_usd": summary.cost_usd,
+        },
+    )
+    return summary.text
 
 
 # ---------------------------------------------------------------------------
@@ -732,8 +719,6 @@ async def _handle_draft(
 
 SLASH_HANDLERS: dict[str, SlashHandler] = {
     "/exit": _handle_exit,
-    "/quit": _handle_exit,
     "exit": _handle_exit,
-    "quit": _handle_exit,
     "/draft": _handle_draft,
 }

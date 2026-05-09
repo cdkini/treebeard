@@ -221,11 +221,20 @@ vault.
   yourself, your conventions, and how you want it to cite. Today's UTC
   date is appended to the system prompt automatically so phrases like
   "yesterday" resolve.
-- **Slash commands.** `/exit` and `/quit` end the session (Ctrl-D and
-  Ctrl-C also work).
+- **Slash commands.** `/exit` ends the session (Ctrl-D also works).
+  Tab-completes after `/`; in-session history with up/down.
 - **Model.** Set with `[chat] model` in `config.toml`. Accepts `sonnet`,
   `opus`, or any pinned id like `claude-sonnet-4-6`. Defaults to
   `sonnet`.
+- **Tool cards.** When the model invokes a tool, a small bordered card
+  pops up with the tool name and key argument (e.g. `Read 2026-05-08.md`,
+  `Grep "migration"`, `WebFetch anthropic.com`) and a running spinner.
+  The spinner flips to `✓ <summary>` when the result lands, or
+  `✗ <error>` on failure — including `archive denied: …` when the
+  archive guard blocks a path.
+- **Per-turn footer.** A dim line lands after each reply with
+  `model · tokens · cost · duration`. Cost shows `subscription` for
+  unmetered (Claude Max) usage; otherwise `$0.0123`.
 - **Transcripts.** Every turn is appended to
   `<vault>/.om/conversations/chat-<UTC-timestamp>.jsonl` with role,
   content, model, usage, and cost. The auto-commit hook lands the file in
