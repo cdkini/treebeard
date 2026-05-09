@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `om` is a personal note CLI: Click commands over a flat, git-synced markdown vault, plus a Claude Agent SDK-backed chat REPL. Python 3.12+, managed with `uv`. Single executable installed via `uv tool install`.
 
-See `README.md` for user-facing setup and a working "add a command" example.
+`README.md` is the canonical user-facing reference — feature surface, command flags, auto-behaviors, frontmatter schema, vault layout, config knobs. This file holds only what an agent modifying the code must know on top of that.
 
 ## Commands
 
@@ -36,28 +36,26 @@ uv run pytest tests/test_chat.py::test_basic_repl -xvs
 
 ### `_on_close` post-edit + auto-commit hook
 
-`cli()` registers `ctx.call_on_close(lambda: _on_close(ctx))`. On exit of every subcommand (bare `om` prints help and skips the hook):
+`cli()` registers `ctx.call_on_close(lambda: _on_close(ctx))`. The hook runs the post-edit sweep, then the indexer, then auto-commit, then a sync-warn check. See the README's "How `om` changes your files" section for user-facing semantics; what matters when modifying `cli.py`:
 
-1. **Post-edit sweep** (`_run_post_edit_hooks`) — runs `editor.apply_post_edit` on every dirty root-level `.md` reported by `git.changed_root_md_paths`. This catches both the file the subcommand opened and any sidetracks (`:e other.md`, wikilinks, `gf`). `post_edit.reconcile_filename` renames each file to `slugify(title)`; daily-tagged notes are exempt; `PostEditAbort` (collision, daily protection) is warned and the loop continues so the user's edit isn't lost.
-2. **Auto-index** (`om.indexer.build_indexes`) — regenerates per-tag index notes (`<slug(tag)>.md` listing every note carrying that tag, when ≥3 notes do). Idempotent: skips writes when content matches. Wrapped in its own `try` so an indexer failure can't sink the auto-commit; surfaces only `warnings`, drops `stale` to avoid per-command nag.
-3. **Auto-commit** — if `git.has_changes`, `git.commit_all` with subject `<subcommand>: <UTC-timestamp>`. Index file changes from step 2 land in the same commit as the user's edits.
-4. **Sync-warn** — if local commits ≥ `sync_warn_threshold` (default 10), nag to `om sync`.
+- **Order is load-bearing.** The post-edit sweep mutates files (rename to `slugify(title)`, `updated_at` bump) and the indexer rewrites tag-index notes. Both must run *before* `git.commit_all`, so their changes land in the same commit as the user's edits. Don't reorder.
+- **Indexer is isolated in its own `try`.** It's a convenience, not load-bearing — a broken indexer pass must not sink the auto-commit or the user's work. If you change indexer behavior, preserve that isolation.
+- **The bare-`om` skip is intentional.** `ctx.invoked_subcommand is None` (the help case) bypasses the hook entirely; don't move work outside that guard.
+- **Per-subcommand suppression goes at the hook, not the subcommand.** If a subcommand legitimately should *not* trigger a commit, branch on `sub` inside `_on_close` rather than have the subcommand opt out.
 
 Implications when adding a subcommand:
-- Don't write per-command commit/post-edit logic; the hook owns it.
+- Don't write per-command commit / post-edit logic; the hook owns it.
 - The subcommand must set `ctx.obj["config_dir"]` if it accepts `--config-dir`, or the hook resolves the vault from the default config.
-- If a subcommand legitimately should *not* trigger a commit, suppress at the hook (check `sub`), not by skipping the hook.
-- Order matters: the sweep mutates files and bumps `updated_at`, and those changes must land in the same commit as the user's edits.
+- `PostEditAbort` (filename collision, daily-tag protection) is per-file: the loop must keep going so the user's edits aren't lost when one file can't be reconciled.
 
 ### Chat REPL
 
-`src/om/chat.py` runs an async REPL via `claude_agent_sdk.ClaudeSDKClient`, which spawns the bundled `claude` CLI as a subprocess — no API key in code; auth uses the user's Claude Code login. Tool allowlist is hard-coded:
+`src/om/chat.py` runs an async REPL via `claude_agent_sdk.ClaudeSDKClient`, which spawns the bundled `claude` CLI as a subprocess. User-facing behavior (auth, transcripts, slash commands, model knob) lives in the README; the constraints when modifying this file:
 
-```python
-ALLOWED_TOOLS = ("Read", "Glob", "Grep", "WebFetch", "WebSearch")
-```
-
-No `Bash` / `Write` / `Edit` — chat is a read-only assistant. The system prompt is loaded at runtime from `src/om/prompts/system_prompt.txt` (edit it there, not as a string literal). Transcripts append to `<vault>/.om/conversations/chat-<utc>.jsonl` and are landed in git by the same auto-commit hook.
+- **`ALLOWED_TOOLS` is hard-coded** to `("Read", "Glob", "Grep", "WebFetch", "WebSearch")`. No `Bash` / `Write` / `Edit`. If you add a tool, justify it — chat is intentionally read-only.
+- **System prompt is loaded from `src/om/prompts/system_prompt.txt`**, not a Python string literal. Edit the file. Today's UTC date is appended at session start to anchor relative-date phrasing.
+- **Archive guard is a PreToolUse hook** that denies `Read`/`Glob`/`Grep` whose path resolves into `<vault>/.om/archive/`. Any new path-bearing tool needs the same treatment.
+- **`setting_sources=["project"]`** — the vault's `.claude/CLAUDE.md` and `.claude/` config flow through; the user's global Claude Code agent prompt and MCP servers are excluded by design.
 
 ## Tests
 
