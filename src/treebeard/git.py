@@ -1,7 +1,7 @@
-"""Git helpers used by `treebeard init`, the CLI auto-commit hook, and `treebeard sync`.
+"""Git helpers used by `tb init`, the CLI auto-commit hook, and `tb sync`.
 
-Every treebeard vault is a git repo: scaffolding `treebeard init` runs `git init`, every
-mutating command auto-commits via the CLI hook, and `treebeard sync` pushes/pulls.
+Every treebeard vault is a git repo: scaffolding `tb init` runs `git init`, every
+mutating command auto-commits via the CLI hook, and `tb sync` pushes/pulls.
 This module wraps the subprocess calls so callers don't shell out directly.
 """
 
@@ -121,7 +121,7 @@ def commit_all(vault: pathlib.Path, message: str) -> None:
 
 def commit_all_allow_empty(vault: pathlib.Path, message: str) -> None:
     """Like `commit_all`, but creates the commit even when nothing is
-    staged. Used by `treebeard init` to guarantee a fresh vault has a HEAD even
+    staged. Used by `tb init` to guarantee a fresh vault has a HEAD even
     if the user hasn't created any notes yet."""
     subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
     subprocess.run(

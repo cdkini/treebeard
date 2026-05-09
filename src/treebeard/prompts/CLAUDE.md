@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Context for `treebeard chat` — the assistant embedded in this vault.
+Context for `tb chat` — the assistant embedded in this vault.
 
 ## About me
 <!-- who you are, role, recurring interests -->

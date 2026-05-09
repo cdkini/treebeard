@@ -27,7 +27,7 @@ DEFAULT_PREVIEWER = "bat"
 
 # Aliases the bundled `claude` CLI itself resolves to the current
 # generation of each family — pinning the alias (rather than a specific
-# model id like `claude-sonnet-4-6`) means `treebeard chat` rolls forward
+# model id like `claude-sonnet-4-6`) means `tb chat` rolls forward
 # automatically when Anthropic ships a newer Sonnet/Opus. Users can
 # still hand-edit `chat_model` to a pinned id if they want stability.
 VALID_CHAT_MODEL_CHOICES = ("sonnet", "opus")
@@ -108,7 +108,7 @@ def _toml_str(value: str) -> str:
 
 def is_initialized(config_dir: str | None = None) -> bool:
     """True if a config file already records a vault or editor.
-    `treebeard init` uses this to refuse to overwrite an existing setup."""
+    `tb init` uses this to refuse to overwrite an existing setup."""
     raw = _read_raw(config_path_for(config_dir))
     return bool(_read_section(raw, "vault")) or bool(_read_section(raw, "editor"))
 
@@ -139,7 +139,7 @@ def load_config(config_dir: str | None = None) -> Config:
 
     vault_raw = vault_section.get("path")
     if not isinstance(vault_raw, str) or not vault_raw:
-        raise TreebeardError("no vault configured", hint="run `treebeard init` first")
+        raise TreebeardError("no vault configured", hint="run `tb init` first")
     vault = pathlib.Path(vault_raw)
     ok, reason = is_valid_vault(vault)
     if not ok:

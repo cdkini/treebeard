@@ -1,4 +1,4 @@
-"""Tests for `treebeard note` (CLI integration — logic lives in test_todos / test_frontmatter)."""
+"""Tests for `tb note` (CLI integration — logic lives in test_todos / test_frontmatter)."""
 
 from __future__ import annotations
 

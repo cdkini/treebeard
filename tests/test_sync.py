@@ -1,4 +1,4 @@
-"""Tests for `treebeard sync`."""
+"""Tests for `tb sync`."""
 
 from __future__ import annotations
 

@@ -106,7 +106,7 @@ def test_silent_when_no_git(
     (half / ".treebeard").mkdir(parents=True)
     write_cfg(cfg_dir, half)
 
-    # `treebeard note --help` doesn't load the config so it won't error on the
+    # `tb note --help` doesn't load the config so it won't error on the
     # missing .git/ — but the hook will run on close. It must not raise.
     result = runner.invoke(cli, ["note", "--help"])
     assert result.exit_code == 0, result.output
@@ -182,7 +182,7 @@ def test_warns_at_default_threshold(
     _setup_upstream(vault, tmp_path)
     write_cfg(cfg_dir, vault)
 
-    # Each `treebeard note` produces exactly one auto-commit; ten of them
+    # Each `tb note` produces exactly one auto-commit; ten of them
     # puts us at the default threshold. The tenth invocation should
     # print the warning.
     outputs: list[str] = []
@@ -193,7 +193,7 @@ def test_warns_at_default_threshold(
         outputs.append(result.output)
 
     assert "10 unsynced commits" in outputs[-1]
-    assert "treebeard sync" in outputs[-1]
+    assert "tb sync" in outputs[-1]
 
 
 def test_no_warning_below_threshold(
@@ -333,9 +333,9 @@ def test_side_jump_target_gets_post_processed(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """User opens `primary.md` via `treebeard note`, side-jumps in vim to
+    """User opens `primary.md` via `tb note`, side-jumps in vim to
     `other.md`, edits its title. The close hook reconciles `other.md`'s
-    filename even though `treebeard note` never opened it."""
+    filename even though `tb note` never opened it."""
     del freeze_now
     other = _seed_committed(vault, "other.md", "other")
     primary = _seed_committed(vault, "primary.md", "primary")
@@ -550,7 +550,7 @@ def test_post_edit_lands_in_same_commit_as_edit(
 #
 # `_on_close` runs `build_indexes` between the post-edit sweep and the
 # auto-commit, so per-tag index notes stay in sync without a separate
-# `treebeard index` invocation.
+# `tb index` invocation.
 
 
 def test_auto_index_runs_on_subcommand(

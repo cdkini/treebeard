@@ -1,4 +1,4 @@
-"""Shared fzf wiring used by `treebeard open` and `treebeard grep`."""
+"""Shared fzf wiring used by `tb open` and `tb grep`."""
 
 from __future__ import annotations
 

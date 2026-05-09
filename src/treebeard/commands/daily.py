@@ -1,4 +1,4 @@
-"""`treebeard daily` — create or open today's daily note (`YYYY-MM-DD.md`)."""
+"""`tb daily` — create or open today's daily note (`YYYY-MM-DD.md`)."""
 
 from __future__ import annotations
 

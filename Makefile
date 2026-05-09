@@ -7,7 +7,7 @@ install: sync
 	uv tool install --editable --force .
 
 uninstall:
-	uv tool uninstall treebeard
+	uv tool uninstall tb
 
 hooks:
 	uv run pre-commit install

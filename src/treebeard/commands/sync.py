@@ -1,4 +1,4 @@
-"""`treebeard sync` — pull from and push to the configured git remote."""
+"""`tb sync` — pull from and push to the configured git remote."""
 
 from __future__ import annotations
 

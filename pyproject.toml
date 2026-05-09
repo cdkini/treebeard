@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-treebeard = "treebeard.cli:cli"
+tb = "treebeard.cli:cli"
 
 [dependency-groups]
 dev = [

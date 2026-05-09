@@ -1,4 +1,4 @@
-"""`treebeard grep` — fuzzy content search across the vault.
+"""`tb grep` — fuzzy content search across the vault.
 
 rg drives the matching: each keystroke re-runs ripgrep through fzf's
 `change:reload` binding. fzf is just the UI — `--disabled` so it doesn't

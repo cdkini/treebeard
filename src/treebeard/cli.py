@@ -1,4 +1,4 @@
-"""CLI entry point for `treebeard`.
+"""CLI entry point for `tb`.
 
 Subcommands live in `treebeard.commands` and are auto-registered at import time.
 To add a new command, drop a module into `treebeard/commands/` that defines a
@@ -53,7 +53,7 @@ class RichGroup(click.Group):
 
         # Render the Rich table to a string and feed it into Click's
         # formatter buffer so `--help` output remains a single contiguous
-        # chunk (and `treebeard help` echoing `parent.get_help()` works).
+        # chunk (and `tb help` echoing `parent.get_help()` works).
         # `force_terminal=True` makes Rich emit ANSI escapes into the
         # StringIO buffer; `click.echo` then strips them when the final
         # sink isn't an interactive terminal, so pipes stay clean.
@@ -67,10 +67,10 @@ class RichGroup(click.Group):
 
 @click.group(
     cls=RichGroup,
-    help="treebeard — a personal-notes CLI.",
+    help="tb — a personal-notes CLI.",
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-@click.version_option(__version__, "-V", "--version", prog_name="treebeard")
+@click.version_option(__version__, "-V", "--version", prog_name="tb")
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """Root command group."""
@@ -101,7 +101,7 @@ def _on_close(ctx: click.Context) -> None:
     """Run the post-edit sweep, auto-commit any working-tree changes left
     by the subcommand, then warn if local commits have piled up past the
     configured `sync_warn_threshold`. No-ops when no subcommand ran
-    (e.g. `treebeard --help`).
+    (e.g. `tb --help`).
 
     Order matters: the sweep may rename files and bump `updated_at`, and
     those changes need to land in the same commit as the user's edits.
@@ -129,9 +129,7 @@ def _on_close(ctx: click.Context) -> None:
         ahead = git.unsynced_commit_count(vault)
         threshold = load_sync_warn_threshold()
         if ahead is not None and ahead >= threshold:
-            ui.warn(
-                f"{ahead} unsynced commits — run [bold]treebeard sync[/bold] to push to remote."
-            )
+            ui.warn(f"{ahead} unsynced commits — run [bold]tb sync[/bold] to push to remote.")
     except Exception:
         return
 

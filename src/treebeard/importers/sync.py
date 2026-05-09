@@ -60,7 +60,7 @@ def sync(
       - otherwise → no-op (counts as unchanged)
 
     Slug collisions (a different note already owns the desired filename)
-    are logged and skipped — same posture as `treebeard index` for hand-written
+    are logged and skipped — same posture as `tb index` for hand-written
     files.
     """
     existing = _index_existing(vault, importer.source)

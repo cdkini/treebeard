@@ -1,5 +1,5 @@
 """Unit tests for `treebeard.picker` — row formatting + previewer ladder shared
-by `treebeard open` and `treebeard archive`."""
+by `tb open` and `tb archive`."""
 
 from __future__ import annotations
 

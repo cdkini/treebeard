@@ -119,7 +119,7 @@ def test_add_note_updates_index(vault: pathlib.Path) -> None:
 
 def test_stale_index_auto_archived(vault: pathlib.Path) -> None:
     """When a tag falls below THRESHOLD, its index is moved into
-    `.treebeard/archive/` so it stops surfacing in `treebeard open` and stops pointing
+    `.treebeard/archive/` so it stops surfacing in `tb open` and stops pointing
     at notes that may themselves be archived."""
     seed_note(vault, "a", "Alpha", ["foo"])
     seed_note(vault, "b", "Beta", ["foo"])

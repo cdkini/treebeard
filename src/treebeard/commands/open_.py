@@ -1,4 +1,4 @@
-"""`treebeard open` — picker (or non-interactive top-match) over the vault.
+"""`tb open` — picker (or non-interactive top-match) over the vault.
 
 With no QUERY, lists notes via fzf with a full-file preview pane. Enter
 opens the selected note; Ctrl-N creates a new note named after the typed
@@ -86,7 +86,7 @@ def run_interactive(vault: pathlib.Path, editor: str, previewer: str, limit: int
     """Run the picker against `vault`."""
     paths = list_recent_notes(vault, limit)
     if not paths:
-        ui.info("vault is empty — create a note with `treebeard note <name>`")
+        ui.info("vault is empty — create a note with `tb note <name>`")
         return
 
     now_seconds = time.time()
@@ -128,7 +128,7 @@ def run_query(vault: pathlib.Path, editor: str, query: str, limit: int | None) -
     """Open the top fuzzy-match for `query` against vault filename stems."""
     paths = list_recent_notes(vault, limit)
     if not paths:
-        raise TreebeardError("vault is empty", hint="create a note with `treebeard note <name>`")
+        raise TreebeardError("vault is empty", hint="create a note with `tb note <name>`")
     # Flat vault → stem is unique. Match against stems only so the query
     # isn't fighting directory prefixes or title text.
     by_stem = {p.stem: p for p in paths}
@@ -136,7 +136,7 @@ def run_query(vault: pathlib.Path, editor: str, query: str, limit: int | None) -
     if top_stem is None:
         raise TreebeardError(
             f"no note matches {query!r}",
-            hint="try `treebeard open` for the interactive picker",
+            hint="try `tb open` for the interactive picker",
         )
     target_path = by_stem[top_stem]
     if not target_path.exists():

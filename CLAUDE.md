@@ -41,7 +41,7 @@ make fmt           # ruff format + ruff check --fix
 make lint          # ruff check + ruff format --check + basedpyright
 make test          # pytest with coverage (term + htmlcov/)
 make ci            # lint + test (run before declaring work done)
-make uninstall     # uv tool uninstall treebeard
+make uninstall     # uv tool uninstall tb
 ```
 
 Single test:
@@ -54,15 +54,15 @@ uv run pytest tests/test_chat.py::test_basic_repl -xvs
 
 ### Command auto-registration
 
-`src/treebeard/commands/__init__.py` iterates `pkgutil.iter_modules(__path__)` and yields any module-level `command` (a `click.Command` / `click.Group`). `cli.py` registers them in a loop at import time — there are no hard-coded subcommand imports. Drop `src/treebeard/commands/foo.py` exporting `command` and `treebeard foo` is live. Underscore-prefixed modules are skipped.
+`src/treebeard/commands/__init__.py` iterates `pkgutil.iter_modules(__path__)` and yields any module-level `command` (a `click.Command` / `click.Group`). `cli.py` registers them in a loop at import time — there are no hard-coded subcommand imports. Drop `src/treebeard/commands/foo.py` exporting `command` and `tb foo` is live. Underscore-prefixed modules are skipped.
 
 ### `_on_close` post-edit + auto-commit hook
 
-`cli()` registers `ctx.call_on_close(lambda: _on_close(ctx))`. The hook runs the post-edit sweep, then the indexer, then auto-commit, then a sync-warn check. See the README's "How `treebeard` changes your files" section for user-facing semantics; what matters when modifying `cli.py`:
+`cli()` registers `ctx.call_on_close(lambda: _on_close(ctx))`. The hook runs the post-edit sweep, then the indexer, then auto-commit, then a sync-warn check. See the README's "How `tb` changes your files" section for user-facing semantics; what matters when modifying `cli.py`:
 
 - **Order is load-bearing.** The post-edit sweep mutates files (rename to `slugify(title)`, `updated_at` bump) and the indexer rewrites tag-index notes. Both must run *before* `git.commit_all`, so their changes land in the same commit as the user's edits. Don't reorder.
 - **Indexer is isolated in its own `try`.** It's a convenience, not load-bearing — a broken indexer pass must not sink the auto-commit or the user's work. If you change indexer behavior, preserve that isolation.
-- **The bare-`treebeard` skip is intentional.** `ctx.invoked_subcommand is None` (the help case) bypasses the hook entirely; don't move work outside that guard.
+- **The bare-`tb` skip is intentional.** `ctx.invoked_subcommand is None` (the help case) bypasses the hook entirely; don't move work outside that guard.
 - **Per-subcommand suppression goes at the hook, not the subcommand.** If a subcommand legitimately should *not* trigger a commit, branch on `sub` inside `_on_close` rather than have the subcommand opt out.
 
 Implications when adding a subcommand:

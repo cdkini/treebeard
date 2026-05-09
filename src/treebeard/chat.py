@@ -1,4 +1,4 @@
-"""`treebeard chat` runtime — Claude Agent SDK REPL with JSONL transcript.
+"""`tb chat` runtime — Claude Agent SDK REPL with JSONL transcript.
 
 Authenticates via the bundled `claude` CLI binary that the Claude Agent SDK
 spawns as a subprocess. That CLI uses your Claude Code login session, so a
@@ -85,7 +85,7 @@ def _build_system_prompt(now: datetime) -> str:
     return f"{SYSTEM_PROMPT_BASE}\n\nToday is {today} (UTC)."
 
 
-# Glyph for the user-input prompt — matches `treebeard init`'s aesthetic.
+# Glyph for the user-input prompt — matches `tb init`'s aesthetic.
 PROMPT_GLYPH = "▸"
 
 
@@ -294,7 +294,7 @@ def _render_header(vault: pathlib.Path, transcript: pathlib.Path, model: str) ->
     status_console.print(
         Panel(
             body,
-            title="[bold]treebeard chat[/bold]",
+            title="[bold]tb chat[/bold]",
             subtitle="[dim]Claude Code subscription · read-only vault access[/dim]",
             border_style="cyan",
             expand=False,

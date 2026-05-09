@@ -1,4 +1,4 @@
-"""Tests for `treebeard help` — equivalence with `treebeard --help` and picker invisibility."""
+"""Tests for `tb help` — equivalence with `tb --help` and picker invisibility."""
 
 from __future__ import annotations
 

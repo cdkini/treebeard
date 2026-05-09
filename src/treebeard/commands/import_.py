@@ -1,4 +1,4 @@
-"""`treebeard import <integration>` — pull notes/artifacts from external integrations.
+"""`tb import <integration>` — pull notes/artifacts from external integrations.
 
 Group is extensible: add a new integration by registering a subcommand on
 `command` (e.g. `@command.command("foo")`). Integrations themselves live

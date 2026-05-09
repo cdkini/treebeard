@@ -1,6 +1,6 @@
-"""`treebeard help` — canonical help surface.
+"""`tb help` — canonical help surface.
 
-Mirrors `treebeard --help` (and bare `treebeard`).
+Mirrors `tb --help` (and bare `tb`).
 """
 
 from __future__ import annotations

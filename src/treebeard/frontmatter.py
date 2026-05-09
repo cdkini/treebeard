@@ -3,7 +3,7 @@
 The `Frontmatter` dataclass parses and serializes the leading `---…---`
 block of a markdown note. It owns the schema (title, source, created_at,
 updated_at, tags, plus import_source/import_id/import_url for notes
-pulled by `treebeard import`) and round-trips any unknown fields verbatim so
+pulled by `tb import`) and round-trips any unknown fields verbatim so
 we never lose user data on rewrite.
 """
 

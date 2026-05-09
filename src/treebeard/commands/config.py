@@ -1,4 +1,4 @@
-"""`treebeard config` — open the treebeard config file in the configured editor."""
+"""`tb config` — open the treebeard config file in the configured editor."""
 
 from __future__ import annotations
 

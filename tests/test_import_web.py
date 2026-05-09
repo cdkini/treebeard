@@ -1,4 +1,4 @@
-"""Tests for `treebeard import web`."""
+"""Tests for `tb import web`."""
 
 from __future__ import annotations
 

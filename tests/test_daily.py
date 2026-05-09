@@ -1,4 +1,4 @@
-"""Tests for `treebeard daily` (CLI integration — carryover rules live in test_todos)."""
+"""Tests for `tb daily` (CLI integration — carryover rules live in test_todos)."""
 
 from __future__ import annotations
 

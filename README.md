@@ -4,29 +4,26 @@
 
 > The world is changing: I feel it in the water, I feel it in the earth, and I smell it in the air.
 
-A note-taking and personal knowledgement management (PKM) system CLI over a flat, git-synced markdown vault. Treebeard is designed with speed and efficiency in mind, attempting to enable low friction collection and synthesis of ideas. Basic functionality is augmented with LLM-tooling to answer questions about notes, derive insights, and aid the user with drafts. 
+A note-taking and personal knowledgement management (PKM) system CLI over a flat, git-synced markdown vault. Treebeard is designed with speed and efficiency in mind, attempting to enable low friction collection and synthesis of ideas. Basic functionality is augmented with LLM-tooling to answer questions about notes, derive insights, and aid the user with drafts.
 
-For your sanity, please set:
-```bash
-alias t="treebeard"
-```
+The CLI installs as `tb`.
 
 ## What it is
 
-Your notes are plain markdown files in a git repo. `treebeard` adds three things on
+Your notes are plain markdown files in a git repo. `tb` adds three things on
 top of that:
 
 - A small set of subcommands for capturing, finding, archiving, and syncing
-  notes (`treebeard note`, `treebeard daily`, `treebeard open`, `treebeard grep`,
-  `treebeard archive`, `treebeard sync`, `treebeard import …`).
+  notes (`tb note`, `tb daily`, `tb open`, `tb grep`,
+  `tb archive`, `tb sync`, `tb import …`).
 - Auto-mechanics that run on every command exit: filename is derived from
   the frontmatter title, daily-note dates are protected, per-tag index notes
   regenerate themselves, and the working tree auto-commits.
-- `treebeard chat` — an interactive Claude REPL with read-only access to the
+- `tb chat` — an interactive Claude REPL with read-only access to the
   vault, using your existing Claude Code login (no API key).
 
-The vault stays portable: clone it from any machine, `treebeard init` to adopt
-it, done. There's nothing in `treebeard` you couldn't replicate with a
+The vault stays portable: clone it from any machine, `tb init` to adopt
+it, done. There's nothing in `tb` you couldn't replicate with a
 hand-written script — the value is in the wiring.
 
 ## Install
@@ -56,24 +53,24 @@ reinstalling.
 ## Quickstart
 
 ```bash
-treebeard init ~/Notes        # scaffold (or adopt) a vault, write ~/.treebeard/config.toml
-treebeard note hello          # opens hello.md in your editor with frontmatter
-                              # — on close: rename if you changed title, then auto-commit
-treebeard daily               # opens YYYY-MM-DD.md, carrying forward unchecked TODOs
-treebeard open                # fzf picker over the vault (Ctrl-N to create)
-treebeard grep                # ripgrep through fzf, opens at the matched line
-treebeard chat                # Claude REPL with read access to ~/Notes
-treebeard sync                # pull --rebase + push
+tb init ~/Notes        # scaffold (or adopt) a vault, write ~/.treebeard/config.toml
+tb note hello          # opens hello.md in your editor with frontmatter
+                       # — on close: rename if you changed title, then auto-commit
+tb daily               # opens YYYY-MM-DD.md, carrying forward unchecked TODOs
+tb open                # fzf picker over the vault (Ctrl-N to create)
+tb grep                # ripgrep through fzf, opens at the matched line
+tb chat                # Claude REPL with read access to ~/Notes
+tb sync                # pull --rebase + push
 ```
 
 ## Vault setup
 
-`treebeard init <path>` is non-interactive: the path is the only required input.
+`tb init <path>` is non-interactive: the path is the only required input.
 Everything else (editor, previewer, chat model, sync threshold) gets a
 sensible default written into `~/.treebeard/config.toml`; edit it later with
-`treebeard config`.
+`tb config`.
 
-What `treebeard init` does, depending on what's at `<path>`:
+What `tb init` does, depending on what's at `<path>`:
 
 - **Empty or missing directory** — creates it, runs `git init`, writes a
   starter `<path>/.claude/CLAUDE.md` (the chat session's vault context),
@@ -84,7 +81,7 @@ What `treebeard init` does, depending on what's at `<path>`:
 - **Anything else** (non-empty directory with no `.treebeard/`, a regular file,
   a `.treebeard/` without `.git/`) — refused with an error.
 
-`treebeard init` will not overwrite an already-configured `~/.treebeard/config.toml`.
+`tb init` will not overwrite an already-configured `~/.treebeard/config.toml`.
 
 A vault is just a directory containing both `.treebeard/` (treebeard's metadata)
 and `.git/` (history). Markdown notes live at the root — the layout is flat
@@ -96,7 +93,7 @@ Grouped by what you're trying to do.
 
 ### Capture
 
-**`treebeard note [NAME]`** — create or open a markdown note.
+**`tb note [NAME]`** — create or open a markdown note.
 
 - With `NAME`, opens `<vault>/<slugify(NAME)>.md` (created if missing,
   with frontmatter prefilled).
@@ -104,66 +101,66 @@ Grouped by what you're trying to do.
   title in the editor and on close it gets renamed; leave it untitled and
   it stays a scratch.
 
-**`treebeard daily`** — create or open today's daily note (`YYYY-MM-DD.md`).
+**`tb daily`** — create or open today's daily note (`YYYY-MM-DD.md`).
 Today's date comes from the local clock. The note is tagged `daily` (which
 locks the filename — see Auto-behaviors). When creating a new daily, any
 unchecked `- [ ]` TODOs from the most recent prior daily are carried
 forward with a ` (from MM/DD)` provenance suffix.
 
-**`treebeard import granola [--since YYYY-MM-DD]`** — pull meeting notes from
+**`tb import granola [--since YYYY-MM-DD]`** — pull meeting notes from
 [Granola](https://granola.ai). Defaults to the last 7 days. Each note
 lands at `<vault>/granola-<date>-<slug>.md` with `source: import` and
 `tags: [granola]`. Requires `granola_api_key` under `[secrets]` in
 `config.toml`.
 
-**`treebeard import web <url>`** — fetch a web page and import it as a markdown
+**`tb import web <url>`** — fetch a web page and import it as a markdown
 note (`<vault>/web-<date>-<slug>.md`).
 
 ### Find
 
-**`treebeard open [QUERY...] [--limit N]`** — fuzzy-pick a note from the vault.
+**`tb open [QUERY...] [--limit N]`** — fuzzy-pick a note from the vault.
 With no QUERY, opens an interactive fzf picker (Enter opens the highlight;
 **Ctrl-N** creates a new note named after whatever you've typed, or a fresh
 scratch if empty). With QUERY, fuzzy-matches against vault filenames and
 opens the top match (errors if nothing matches). `--limit N` caps the
 candidate pool to the N most recently edited notes in either mode.
 
-**`treebeard grep`** — ripgrep through fzf. Each keystroke re-runs `rg` over the
+**`tb grep`** — ripgrep through fzf. Each keystroke re-runs `rg` over the
 vault. Enter opens the matched note at the matched line.
 
 ### Housekeeping
 
-**`treebeard archive`** — multi-select picker (Tab marks rows, Enter archives
+**`tb archive`** — multi-select picker (Tab marks rows, Enter archives
 the marked set, falling back to the focused row if nothing is marked). Each
 file is moved to `<vault>/.treebeard/archive/<UTC-timestamp>__<original>.md`.
-The archive is excluded from `treebeard open` / `treebeard grep` and is
-hard-blocked for `treebeard chat`. Restore is a manual `mv` back to the vault
+The archive is excluded from `tb open` / `tb grep` and is
+hard-blocked for `tb chat`. Restore is a manual `mv` back to the vault
 root.
 
-**`treebeard sync`** — `git pull --rebase && git push` against the vault's
+**`tb sync`** — `git pull --rebase && git push` against the vault's
 configured remote. Errors with a hint if no remote is set; add one with
 `git remote add origin <url>` inside the vault.
 
-**`treebeard config`** — open `~/.treebeard/config.toml` in your configured
+**`tb config`** — open `~/.treebeard/config.toml` in your configured
 editor.
 
 ### Chat
 
-**`treebeard chat`** — see the [Chat](#chat) section below.
+**`tb chat`** — see the [Chat](#chat) section below.
 
 ### Meta
 
-- **`treebeard`** (or `treebeard help` / `treebeard --help`) — list subcommands.
+- **`tb`** (or `tb help` / `tb --help`) — list subcommands.
 
-## How `treebeard` changes your files
+## How `tb` changes your files
 
-This section is load-bearing for trust. `treebeard` will rename, rewrite, and
+This section is load-bearing for trust. `tb` will rename, rewrite, and
 commit files behind your back — these are the rules.
 
 ### Title is the filename
 
 Every note has YAML frontmatter; the `title` field is the source of truth
-for the filename. After you save and close the editor, `treebeard` renames the
+for the filename. After you save and close the editor, `tb` renames the
 file to `<slugify(title)>.md` (lowercased, runs of non-alphanumerics
 collapsed to `-`). Rename `title:` to rename the file.
 
@@ -182,21 +179,21 @@ lookup, so it isn't allowed to drift.
 
 ### Auto-commit on every command exit
 
-After every subcommand exits, `treebeard` stages all working-tree changes in
+After every subcommand exits, `tb` stages all working-tree changes in
 the vault and commits them with subject `<subcommand>: <UTC-timestamp>`. The
 title-driven rename, the `updated_at` bump on edited notes, index updates,
 and chat transcripts all land in the same commit as your edits.
 
 Imported notes (`source: import`) are exempt from the `updated_at` bump so
-the importer's idempotency works (re-running `treebeard import` is a no-op
+the importer's idempotency works (re-running `tb import` is a no-op
 when nothing changed upstream).
 
 ### Auto-index per tag
 
-When at least 3 non-index notes share a tag, `treebeard` writes
+When at least 3 non-index notes share a tag, `tb` writes
 `<vault>/<slug(tag)>.md` — an alphabetical wikilink list of every note
 carrying that tag, marked with `tags: [index]`. When the count drops back
-below 3 (e.g. after `treebeard archive`), the now-orphaned index note is
+below 3 (e.g. after `tb archive`), the now-orphaned index note is
 auto-archived.
 
 The pass is idempotent: if the desired body matches what's on disk, the
@@ -209,12 +206,12 @@ them.
 ### Sync warning
 
 If your local branch is `[sync] warn_threshold` commits or more ahead of
-its remote (default 10), `treebeard` nags you to run `treebeard sync` after
+its remote (default 10), `tb` nags you to run `tb sync` after
 the command completes.
 
 ## Chat
 
-`treebeard chat` opens an interactive Claude REPL with read-only access to the
+`tb chat` opens an interactive Claude REPL with read-only access to the
 vault.
 
 - **Auth.** Spawns the bundled `claude` CLI as a subprocess and uses your
@@ -227,7 +224,7 @@ vault.
   whose path resolves into `.treebeard/archive/`. Archived notes stay
   invisible to the model.
 - **Vault context.** `<vault>/.claude/CLAUDE.md` is loaded as project
-  context (scaffolded by `treebeard init`). Edit it to teach the model about
+  context (scaffolded by `tb init`). Edit it to teach the model about
   yourself, your conventions, and how you want it to cite. Today's UTC
   date is appended to the system prompt automatically so phrases like
   "yesterday" resolve.
@@ -256,11 +253,11 @@ vault.
 
 ```
 <vault>/
-├── .git/                          # required; auto-committed by treebeard
+├── .git/                          # required; auto-committed by tb
 ├── .treebeard/
-│   ├── archive/                   # soft-deleted notes (treebeard archive)
+│   ├── archive/                   # soft-deleted notes (tb archive)
 │   │   └── 2026-05-08T14-22-09Z__some-old-note.md
-│   └── conversations/             # treebeard chat transcripts (JSONL)
+│   └── conversations/             # tb chat transcripts (JSONL)
 │       └── chat-20260509-114433.jsonl
 ├── .claude/
 │   └── CLAUDE.md                  # vault-specific chat context
@@ -271,8 +268,8 @@ vault.
 └── scratch-2026-05-09t12-34-56.md # untitled scratch
 ```
 
-The vault is flat — `treebeard` puts every user-visible note at the root and
-doesn't recurse into subdirectories. `treebeard open` and `treebeard grep`
+The vault is flat — `tb` puts every user-visible note at the root and
+doesn't recurse into subdirectories. `tb open` and `tb grep`
 exclude `.treebeard/`, `.git/`, and `.claude/`.
 
 ## Configuration
@@ -297,19 +294,19 @@ warn_threshold = 10
 granola_api_key = ""  # optional
 ```
 
-- `[vault] path` — where your notes live. Set by `treebeard init`; required
+- `[vault] path` — where your notes live. Set by `tb init`; required
   for every other subcommand.
 - `[editor] command` — binary to spawn for note edits. Falls back to
   `vim` if the configured editor isn't on `$PATH` and isn't a known
   alternative.
-- `[editor] previewer` — preview pane in `treebeard open` / `treebeard archive`.
+- `[editor] previewer` — preview pane in `tb open` / `tb archive`.
   Falls through to `cat` if your choice isn't installed.
 - `[chat] model` — passed straight to the bundled `claude` CLI.
 - `[sync] warn_threshold` — positive integer; trigger threshold for the
   unsynced-commits warning. Default 10.
-- `[secrets] granola_api_key` — only consulted by `treebeard import granola`.
+- `[secrets] granola_api_key` — only consulted by `tb import granola`.
 
-Open the file with `treebeard config`.
+Open the file with `tb config`.
 
 ## Frontmatter schema
 
@@ -346,7 +343,7 @@ make hooks     # one-time: install pre-commit (ruff)
 make fmt       # ruff format + ruff check --fix
 make lint      # ruff check + ruff format --check + basedpyright
 make test      # pytest with coverage
-make uninstall # uv tool uninstall treebeard
+make uninstall # uv tool uninstall tb
 ```
 
 Use `make lint` and `make test` before declaring work done. The
@@ -370,6 +367,6 @@ def command(name: str) -> None:
     click.echo(f"hello, {name}")
 ```
 
-Then `treebeard hello world` works with no further wiring. The post-edit /
+Then `tb hello world` works with no further wiring. The post-edit /
 auto-commit hook runs after every subcommand — don't add per-command
 commit logic.

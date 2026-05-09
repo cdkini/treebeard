@@ -77,8 +77,8 @@ def test_list_recent_notes_empty_vault(tmp_path: pathlib.Path) -> None:
 
 def test_list_recent_notes_skips_subdirs(tmp_path: pathlib.Path) -> None:
     """Vaults are flat. Markdown files in subdirectories — including
-    tooling dirs like `.claude/` (where `treebeard chat`'s project memory
-    lives) — are not user notes and must not appear in `treebeard open`."""
+    tooling dirs like `.claude/` (where `tb chat`'s project memory
+    lives) — are not user notes and must not appear in `tb open`."""
     nested = _touch(tmp_path, "subdir/inner.md")
     claude_md = _touch(tmp_path, ".claude/CLAUDE.md")
     flat = _touch(tmp_path, "flat.md")

@@ -1,6 +1,6 @@
 """Move notes into `<vault>/.treebeard/archive/` with a timestamped prefix.
 
-Used by `treebeard archive` for user-selected notes and by the auto-indexer for
+Used by `tb archive` for user-selected notes and by the auto-indexer for
 stale per-tag index notes whose corpus dropped below the index threshold.
 The timestamp prefix is appended (not checked-and-suffixed) so the archive
 is append-only by construction: re-archiving a same-named note after
@@ -49,7 +49,7 @@ def archive_paths(
         if not source.exists():
             raise TreebeardError(
                 f"selected file no longer exists: {source}",
-                hint="re-run `treebeard archive`",
+                hint="re-run `tb archive`",
             )
         target = target_dir / f"{stamp}__{source.name}"
         source.rename(target)

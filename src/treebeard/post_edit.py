@@ -5,7 +5,7 @@ closes the editor, the file is renamed so its stem matches
 `slugify(frontmatter.title)`. Empty titles fall back to a `scratch-*`
 stem (and stay there until the user names the note).
 
-Daily-tagged notes are protected — a rename would break `treebeard daily`'s
+Daily-tagged notes are protected — a rename would break `tb daily`'s
 prior-day lookup, so we raise `PostEditAbort` and let the editor wrapper
 restore the pre-edit snapshot.
 """

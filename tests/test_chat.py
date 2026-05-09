@@ -1,4 +1,4 @@
-"""Tests for `treebeard chat` — REPL plumbing, transcript, and error handling."""
+"""Tests for `tb chat` — REPL plumbing, transcript, and error handling."""
 
 from __future__ import annotations
 
@@ -286,7 +286,7 @@ def test_summary_skipped_when_no_turns(
 def test_client_options_open_session_in_vault_with_readonly_tools(
     vault: pathlib.Path,
 ) -> None:
-    """`treebeard chat` should pin the SDK to the vault dir, expose only
+    """`tb chat` should pin the SDK to the vault dir, expose only
     read-only tools, allow project-level `.claude/` (so a vault-local
     CLAUDE.md flows through), and override Claude Code's agent system
     prompt with a vault-aware one."""

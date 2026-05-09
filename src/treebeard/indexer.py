@@ -16,15 +16,15 @@ is left alone (no `updated_at` bump, no spurious commit). Notes that exist
 under a tag's filename but lack the `index` marker are treated as
 hand-written and refused with a warning.
 
-When a tag's count falls back below `THRESHOLD` (e.g. after `treebeard archive`),
+When a tag's count falls back below `THRESHOLD` (e.g. after `tb archive`),
 the now-orphaned index is moved into `.treebeard/archive/` via `treebeard.archiver` so it
-stops appearing in `treebeard open` and stops pointing at archived notes via
+stops appearing in `tb open` and stops pointing at archived notes via
 `[[wikilinks]]`. The move uses the same timestamped-prefix scheme as
-`treebeard archive`, so the index is recoverable by a manual `mv` like any other
+`tb archive`, so the index is recoverable by a manual `mv` like any other
 archived note.
 
 Runs as part of the `_on_close` auto-commit hook on every subcommand, so
-indexes stay in sync without a separate `treebeard index` invocation.
+indexes stay in sync without a separate `tb index` invocation.
 """
 
 from __future__ import annotations

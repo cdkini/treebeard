@@ -1,4 +1,4 @@
-"""Tests for `treebeard init`."""
+"""Tests for `tb init`."""
 
 from __future__ import annotations
 

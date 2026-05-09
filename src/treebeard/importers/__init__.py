@@ -1,4 +1,4 @@
-"""Importer interface shared by all `treebeard import <foo>` integrations.
+"""Importer interface shared by all `tb import <foo>` integrations.
 
 An `Importer` knows how to fetch notes from one external system. The
 `sync()` driver in `treebeard.importers.sync` consumes any `Importer` and lands
@@ -61,7 +61,7 @@ class Importer(Protocol):
     (so two importers don't fight over the same files).
 
     `single_shot` is True for importers that always handle exactly one
-    user-specified item (e.g. `treebeard import web <URL>`) and ignore `since`.
+    user-specified item (e.g. `tb import web <URL>`) and ignore `since`.
     The driver uses it to suppress the "querying since X / found N"
     prelude, which is noise when there's only ever one item and the
     user just typed its identifier on the CLI.

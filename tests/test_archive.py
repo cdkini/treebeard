@@ -229,7 +229,7 @@ def test_archived_file_disappears_from_listing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`list_recent_notes` is non-recursive, so archived files vanish
-    from `treebeard open` / `treebeard grep` automatically."""
+    from `tb open` / `tb grep` automatically."""
     write_cfg(cfg_dir, vault)
     keep = _seed_note(vault, "keep.md", "keep")
     drop = _seed_note(vault, "drop.md", "drop")

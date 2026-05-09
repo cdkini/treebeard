@@ -1,6 +1,6 @@
 """Shared row formatting + preview-command resolution for fzf pickers.
 
-Multiple commands (`treebeard open`, `treebeard archive`) present the same vault-note
+Multiple commands (`tb open`, `tb archive`) present the same vault-note
 list to fzf with the same `{title-padded}  {ago}\\t{abspath}` row shape
 and the same preview-renderer ladder. Centralizing them here keeps the
 two pickers in lockstep — a tweak to title width or preview fallback

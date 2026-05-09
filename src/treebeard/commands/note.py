@@ -1,4 +1,4 @@
-"""`treebeard note [NAME]` — create or open a markdown note in the configured vault.
+"""`tb note [NAME]` — create or open a markdown note in the configured vault.
 
 With no NAME, creates an untitled `scratch-<timestamp>.md`. The user can
 add a title in the editor; on close, `reconcile_filename` (in

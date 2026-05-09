@@ -9,7 +9,7 @@ and idempotency by `import_id`.
 
 `updated_at` is set to "now" on every run so the driver naturally takes
 the overwrite branch when the note already exists — re-running
-`treebeard import web <URL>` always re-fetches the body. `created_at` is
+`tb import web <URL>` always re-fetches the body. `created_at` is
 preserved by the driver across overwrites.
 """
 

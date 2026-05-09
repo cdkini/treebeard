@@ -1,6 +1,6 @@
-"""`treebeard archive` — soft-delete notes by moving them into `.treebeard/archive/`.
+"""`tb archive` — soft-delete notes by moving them into `.treebeard/archive/`.
 
-Lists notes via fzf with the same row format as `treebeard open`. Tab marks
+Lists notes via fzf with the same row format as `tb open`. Tab marks
 multiple rows; Enter archives the marked set (or the focused row if
 nothing is marked). Each archived file is renamed to
 `.treebeard/archive/{utc_iso}__{original-filename}`, where the timestamp is
@@ -8,8 +8,8 @@ computed once per invocation so a multi-archive groups together
 lexicographically.
 
 The archive directory is intentionally inside `.treebeard/`, which is excluded
-from `treebeard open` and `treebeard grep`'s non-recursive vault glob. Files reappear
-nowhere else automatically — restore is a manual `mv` (or a future `treebeard
+from `tb open` and `tb grep`'s non-recursive vault glob. Files reappear
+nowhere else automatically — restore is a manual `mv` (or a future `tb
 restore`). The auto-commit hook at the CLI root records each archive as
 a git rename.
 """
@@ -67,7 +67,7 @@ def _selected_paths(rows: list[str]) -> list[pathlib.Path]:
 
 
 def run(vault: pathlib.Path, previewer: str) -> None:
-    """Archive notes selected via fzf. Shared entry for `treebeard archive`."""
+    """Archive notes selected via fzf. Shared entry for `tb archive`."""
     paths = list_recent_notes(vault, None)
     if not paths:
         ui.info("vault is empty — nothing to archive")

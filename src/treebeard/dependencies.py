@@ -61,7 +61,7 @@ REQUIRED: tuple[Dependency, ...] = (GIT, FZF, RG)
 
 def first_available(deps: tuple[Dependency, ...]) -> Dependency | None:
     """Return the first dependency in `deps` that's on `$PATH`, or None.
-    Used by `treebeard init` to pick a sensible default for the user."""
+    Used by `tb init` to pick a sensible default for the user."""
     return next((dep for dep in deps if dep.is_available()), None)
 
 
@@ -93,5 +93,5 @@ def check_editor(name: str) -> None:
     if shutil.which(name) is None:
         raise TreebeardError(
             f"editor `{name}` not found on PATH",
-            hint="install it, or change `editor` in your treebeard config",
+            hint="install it, or change `editor` in your tb config",
         )

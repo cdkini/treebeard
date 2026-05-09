@@ -1,4 +1,4 @@
-"""`treebeard chat` — interactive Claude REPL with JSONL transcript."""
+"""`tb chat` — interactive Claude REPL with JSONL transcript."""
 
 from __future__ import annotations
 

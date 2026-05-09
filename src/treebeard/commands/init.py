@@ -1,8 +1,8 @@
-"""`treebeard init <path>` — scaffold a vault at `<path>` and persist its location.
+"""`tb init <path>` — scaffold a vault at `<path>` and persist its location.
 
 Non-interactive: the path is the only required input. Editor, previewer,
 chat model, and sync-warn threshold all fall back to sane defaults; the
-user can edit `~/.treebeard/config.toml` later (via `treebeard config`) to change
+user can edit `~/.treebeard/config.toml` later (via `tb config`) to change
 them. Git identity is inherited from the user's global git config; if
 the user wants a remote, they add one with `git remote add origin <url>`
 inside the vault.

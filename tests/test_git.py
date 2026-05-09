@@ -149,7 +149,7 @@ def test_has_head_after_commit(vault: pathlib.Path) -> None:
 
 
 def test_commit_all_allow_empty_creates_commit(vault: pathlib.Path) -> None:
-    """`treebeard init` calls this to seed a HEAD even if the user has no notes."""
+    """`tb init` calls this to seed a HEAD even if the user has no notes."""
     assert not git.has_head(vault)
     git.commit_all_allow_empty(vault, "init")
     assert git.has_head(vault)

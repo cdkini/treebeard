@@ -1,4 +1,4 @@
-"""Rich rendering for one `treebeard chat` turn.
+"""Rich rendering for one `tb chat` turn.
 
 `chat.py` owns the SDK + transcript I/O; this module owns the visuals.
 A `TurnRenderer` is constructed per turn, fed every message yielded by

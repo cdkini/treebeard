@@ -2,7 +2,7 @@
 
 Status output (errors, warnings, info, success) goes to stderr through a
 shared Rich `Console`. Stderr keeps it off the pipe-safe stdout channel
-that callers parse (e.g. `vim "$(treebeard note foo)"`).
+that callers parse (e.g. `vim "$(tb note foo)"`).
 
 Path output stays on stdout via `click.echo` — that's what existing code
 already does, and Click's plain echo is lazy w.r.t. `sys.stdout`, which

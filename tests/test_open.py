@@ -241,7 +241,7 @@ def test_explicit_open_lists_all_notes(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """`treebeard open` (no --limit) should list every note, not just 20."""
+    """`tb open` (no --limit) should list every note, not just 20."""
     del freeze_now, fake_editor
     write_cfg(cfg_dir, vault)
     for i in range(25):
@@ -282,7 +282,7 @@ def test_query_opens_top_match(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """`treebeard open foo` runs fzf in --filter mode and opens the top stem match."""
+    """`tb open foo` runs fzf in --filter mode and opens the top stem match."""
     del freeze_now, fake_editor
     write_cfg(cfg_dir, vault)
     target = _seed_note(vault, "foo.md", "foo")
@@ -314,7 +314,7 @@ def test_query_no_match_errors(
     result = runner.invoke(cli, ["open", "zzz"])
     assert result.exit_code != 0
     assert "no note matches 'zzz'" in result.output
-    assert "treebeard open" in result.output  # hint points at interactive picker
+    assert "tb open" in result.output  # hint points at interactive picker
 
 
 def test_query_with_limit_respects_pool(
@@ -373,7 +373,7 @@ def test_query_with_spaces(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """`treebeard open foo bar` (no quotes) joins to a single fzf query."""
+    """`tb open foo bar` (no quotes) joins to a single fzf query."""
     del freeze_now, fake_editor
     write_cfg(cfg_dir, vault)
     target = _seed_note(vault, "foo-bar.md", "foo bar")
