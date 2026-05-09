@@ -15,8 +15,8 @@ from click.testing import CliRunner
 
 from om.cli import cli
 from om.commands import import_ as import_cmd
+from om.config import Config, config_path_for
 from om.importers.granola import BASE_URL, GranolaImporter
-from tests.conftest import write_cfg
 
 
 def commit_seed(vault: pathlib.Path) -> None:
@@ -131,22 +131,24 @@ def install_fake_importer(
 
 
 @pytest.fixture
-def cfg_with_granola(cfg_dir: pathlib.Path, vault: pathlib.Path) -> Callable[[], None]:
-    """Seed config + a granola_api_key entry under [secrets]."""
+def cfg_with_granola(vault: pathlib.Path) -> Callable[[], None]:
+    """Seed the sandboxed default config dir with a granola_api_key."""
 
     def _seed() -> None:
-        write_cfg(cfg_dir, vault)
-        path = cfg_dir / "config.toml"
-        text = path.read_text(encoding="utf-8")
-        path.write_text(
-            text.replace(
-                'granola_api_key = ""',
-                'granola_api_key = "grn_test_key"',
-            ),
-            encoding="utf-8",
-        )
+        Config(vault=vault, granola_api_key="grn_test_key").save(None)
 
     return _seed
+
+
+def seed_default_config(vault: pathlib.Path) -> pathlib.Path:
+    """Write a default `config.toml` to the sandboxed default dir.
+
+    The autouse `_sandbox_default_config_dir` fixture in `conftest.py`
+    redirects `DEFAULT_CONFIG_DIR` to a tmp path, so this never touches
+    the developer's real `~/.om`.
+    """
+    Config(vault=vault).save(None)
+    return config_path_for(None)
 
 
 def test_help(runner: CliRunner) -> None:
@@ -157,7 +159,6 @@ def test_help(runner: CliRunner) -> None:
 
 def test_first_import_writes_notes(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -174,7 +175,7 @@ def test_first_import_writes_notes(
     }
     install_fake_importer(monkeypatch, notes)
 
-    result = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["import", "granola"])
 
     assert result.exit_code == 0, result.output
     assert "wrote 2, updated 0, unchanged 0, skipped 0" in result.output
@@ -195,7 +196,6 @@ def test_first_import_writes_notes(
 
 def test_idempotent_second_run(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -205,12 +205,12 @@ def test_idempotent_second_run(
     get_note_calls: list[str] = []
     install_fake_importer(monkeypatch, notes, get_note_calls=get_note_calls)
 
-    r1 = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    r1 = runner.invoke(cli, ["import", "granola"])
     assert r1.exit_code == 0, r1.output
     sha1 = head_sha(vault)
     assert get_note_calls == ["not_aaaaaaaaaaaaaa"]  # initial import fetched the body
 
-    r2 = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    r2 = runner.invoke(cli, ["import", "granola"])
     assert r2.exit_code == 0, r2.output
     assert "wrote 0, updated 0, unchanged 1, skipped 0" in r2.output
     sha2 = head_sha(vault)
@@ -221,7 +221,6 @@ def test_idempotent_second_run(
 
 def test_subsecond_updated_at_does_not_force_update(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -242,11 +241,11 @@ def test_subsecond_updated_at_does_not_force_update(
     get_note_calls: list[str] = []
     install_fake_importer(monkeypatch, notes, get_note_calls=get_note_calls)
 
-    r1 = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    r1 = runner.invoke(cli, ["import", "granola"])
     assert r1.exit_code == 0, r1.output
     assert "wrote 1" in r1.output
 
-    r2 = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    r2 = runner.invoke(cli, ["import", "granola"])
     assert r2.exit_code == 0, r2.output
     assert "unchanged 1" in r2.output
     # And — critically — fetch_one must not be called the second time.
@@ -255,7 +254,6 @@ def test_subsecond_updated_at_does_not_force_update(
 
 def test_remote_update_overwrites_preserving_created_at(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -271,7 +269,7 @@ def test_remote_update_overwrites_preserving_created_at(
     notes = {"not_aaaaaaaaaaaaaa": note}
     install_fake_importer(monkeypatch, notes)
 
-    r1 = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    r1 = runner.invoke(cli, ["import", "granola"])
     assert r1.exit_code == 0, r1.output
 
     # Granola edits the note: updated_at advances, summary changes.
@@ -283,7 +281,7 @@ def test_remote_update_overwrites_preserving_created_at(
         summary="Second version with edits.",
     )
 
-    r2 = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    r2 = runner.invoke(cli, ["import", "granola"])
     assert r2.exit_code == 0, r2.output
     assert "updated 1" in r2.output
 
@@ -296,7 +294,6 @@ def test_remote_update_overwrites_preserving_created_at(
 
 def test_local_newer_is_no_op(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -311,7 +308,7 @@ def test_local_newer_is_no_op(
     notes = {"not_aaaaaaaaaaaaaa": note}
     install_fake_importer(monkeypatch, notes)
 
-    r1 = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    r1 = runner.invoke(cli, ["import", "granola"])
     assert r1.exit_code == 0, r1.output
 
     # User locally edits the file and bumps updated_at past the remote.
@@ -327,7 +324,7 @@ def test_local_newer_is_no_op(
     commit_seed(vault)
     before = path.read_text(encoding="utf-8")
 
-    r2 = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    r2 = runner.invoke(cli, ["import", "granola"])
     assert r2.exit_code == 0, r2.output
     assert "unchanged 1" in r2.output
     assert path.read_text(encoding="utf-8") == before
@@ -335,7 +332,6 @@ def test_local_newer_is_no_op(
 
 def test_recurring_meeting_lands_per_day(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -358,7 +354,7 @@ def test_recurring_meeting_lands_per_day(
     }
     install_fake_importer(monkeypatch, notes)
 
-    result = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["import", "granola"])
     assert result.exit_code == 0, result.output
     assert "wrote 2, updated 0, unchanged 0, skipped 0" in result.output
     assert (vault / "granola-2026-05-07-standup.md").exists()
@@ -367,7 +363,6 @@ def test_recurring_meeting_lands_per_day(
 
 def test_collision_with_handwritten_file_skips(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -381,7 +376,7 @@ def test_collision_with_handwritten_file_skips(
     notes = {"not_aaaaaaaaaaaaaa": fake_note("not_aaaaaaaaaaaaaa", "Roadmap sync")}
     install_fake_importer(monkeypatch, notes)
 
-    result = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["import", "granola"])
 
     assert result.exit_code == 0, result.output
     assert "skipped 1" in result.output
@@ -391,19 +386,17 @@ def test_collision_with_handwritten_file_skips(
 
 def test_missing_api_key_errors(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
 ) -> None:
-    write_cfg(cfg_dir, vault)
+    seed_default_config(vault)
     # Default config has empty granola_api_key.
-    result = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["import", "granola"])
     assert result.exit_code != 0
     assert "granola_api_key not set" in result.output
 
 
 def test_auto_commit_subject(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -412,7 +405,7 @@ def test_auto_commit_subject(
     notes = {"not_aaaaaaaaaaaaaa": fake_note("not_aaaaaaaaaaaaaa", "Roadmap sync")}
     install_fake_importer(monkeypatch, notes)
 
-    result = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["import", "granola"])
     assert result.exit_code == 0, result.output
     subject = subprocess.run(
         ["git", "log", "-1", "--format=%s"],
@@ -426,7 +419,6 @@ def test_auto_commit_subject(
 
 def test_since_flag_passes_to_api(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -440,8 +432,6 @@ def test_since_flag_passes_to_api(
         [
             "import",
             "granola",
-            "--config-dir",
-            str(cfg_dir),
             "--since",
             "2026-01-01",
         ],
@@ -453,7 +443,6 @@ def test_since_flag_passes_to_api(
 
 def test_default_since_is_seven_days_ago(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -463,14 +452,13 @@ def test_default_since_is_seven_days_ago(
     list_calls: list[dict[str, Any]] = []
     install_fake_importer(monkeypatch, {}, list_calls=list_calls)
 
-    result = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["import", "granola"])
     assert result.exit_code == 0, result.output
     assert list_calls[0]["updated_after"] == "2026-05-02T12:00:00Z"
 
 
 def test_pagination_follows_cursor(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -541,7 +529,7 @@ def test_pagination_follows_cursor(
 
     monkeypatch.setattr(import_cmd, "GranolaImporter", factory)
 
-    result = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["import", "granola"])
     assert result.exit_code == 0, result.output
     assert "wrote 2" in result.output
     assert (vault / "granola-2026-05-07-first-note.md").exists()
@@ -553,7 +541,6 @@ def test_pagination_follows_cursor(
 
 def test_null_title_falls_back(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -569,7 +556,7 @@ def test_null_title_falls_back(
     }
     install_fake_importer(monkeypatch, notes)
 
-    result = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["import", "granola"])
     assert result.exit_code == 0, result.output
     assert "wrote 1" in result.output
     assert (vault / "granola-2026-05-07-untitled-meeting.md").exists()
@@ -577,7 +564,6 @@ def test_null_title_falls_back(
 
 def test_api_401_surfaces_clear_error(
     runner: CliRunner,
-    cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     cfg_with_granola: Callable[[], None],
     monkeypatch: pytest.MonkeyPatch,
@@ -601,6 +587,6 @@ def test_api_401_surfaces_clear_error(
 
     monkeypatch.setattr(import_cmd, "GranolaImporter", factory)
 
-    result = runner.invoke(cli, ["import", "granola", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["import", "granola"])
     assert result.exit_code != 0
     assert "401" in result.output or "rejected" in result.output

@@ -60,12 +60,19 @@ class Importer(Protocol):
     used by `sync()` to find existing imported notes from this source
     (so two importers don't fight over the same files).
 
+    `single_shot` is True for importers that always handle exactly one
+    user-specified item (e.g. `om import web <URL>`) and ignore `since`.
+    The driver uses it to suppress the "querying since X / found N"
+    prelude, which is noise when there's only ever one item and the
+    user just typed its identifier on the CLI.
+
     Two-phase API so the driver can show meaningful progress: a cheap
     `list_summaries` materializes everything we need to show "N of M"
     while iterating, and an expensive `fetch_one` pulls the full body.
     """
 
     source: str
+    single_shot: bool
 
     def list_summaries(self, *, since: datetime) -> list[NoteSummary]: ...
 

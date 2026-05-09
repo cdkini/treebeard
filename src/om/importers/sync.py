@@ -61,12 +61,14 @@ def sync(
     existing = _index_existing(vault, importer.source)
     stats = SyncStats()
 
-    ui.info(f"querying {importer.source} for notes updated since {since:%Y-%m-%d %H:%M}…")
+    if not importer.single_shot:
+        ui.info(f"querying {importer.source} for notes updated since {since:%Y-%m-%d %H:%M}…")
     summaries = importer.list_summaries(since=since)
     if not summaries:
         ui.info("no notes returned")
         return stats
-    ui.info(f"found {len(summaries)} note{'s' if len(summaries) != 1 else ''}")
+    if not importer.single_shot:
+        ui.info(f"found {len(summaries)} note{'s' if len(summaries) != 1 else ''}")
 
     with Progress(
         TextColumn("[dim]{task.description}[/dim]"),

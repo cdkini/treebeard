@@ -38,6 +38,7 @@ class GranolaImporter:
     """Implements the `Importer` Protocol for Granola."""
 
     source = "granola"
+    single_shot = False
 
     def __init__(self, api_key: str, *, client: httpx.Client | None = None) -> None:
         if client is None:
