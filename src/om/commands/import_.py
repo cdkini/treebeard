@@ -26,10 +26,8 @@ def _now_utc() -> datetime:
 
 
 @click.group("import")
-@click.pass_context
-def command(ctx: click.Context) -> None:
+def command() -> None:
     """Import artifacts from an external integration into the vault."""
-    ctx.ensure_object(dict)
 
 
 @command.command("granola")
@@ -40,11 +38,9 @@ def command(ctx: click.Context) -> None:
     help="Import notes updated on or after this UTC date "
     f"(default: {DEFAULT_LOOKBACK_DAYS} days ago).",
 )
-@click.pass_context
-def granola(ctx: click.Context, since: datetime | None) -> None:
+def granola(since: datetime | None) -> None:
     """Import meeting notes from Granola."""
-    ctx.ensure_object(dict)["config_dir"] = None
-    cfg = load_config(None)
+    cfg = load_config()
     if not cfg.granola_api_key:
         raise OmError(
             "granola_api_key not set",
@@ -63,11 +59,9 @@ def granola(ctx: click.Context, since: datetime | None) -> None:
 
 @command.command("web")
 @click.argument("url")
-@click.pass_context
-def web(ctx: click.Context, url: str) -> None:
+def web(url: str) -> None:
     """Import a web page as a markdown note."""
-    ctx.ensure_object(dict)["config_dir"] = None
-    cfg = load_config(None)
+    cfg = load_config()
     now = _now_utc()
     importer = WebImporter(url=url, now=now)
     stats = sync(cfg.vault, importer, since=now, now=now)

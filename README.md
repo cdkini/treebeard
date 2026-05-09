@@ -144,9 +144,6 @@ configured remote. Errors with a hint if no remote is set; add one with
 ### Meta
 
 - **`om`** (or `om help` / `om --help`) — list subcommands.
-- **`--config-dir <dir>`** — every subcommand accepts this to point at an
-  alternate config location (defaults to `~/.om/`). Useful for per-vault
-  setups or for tests.
 
 ## How `om` changes your files
 
@@ -261,7 +258,7 @@ doesn't recurse into subdirectories. `om open` and `om grep` exclude
 
 ## Configuration
 
-`~/.om/config.toml` (or any directory passed via `--config-dir`):
+`~/.om/config.toml`:
 
 ```toml
 [vault]
@@ -293,8 +290,7 @@ granola_api_key = ""  # optional
   unsynced-commits warning. Default 10.
 - `[secrets] granola_api_key` — only consulted by `om import granola`.
 
-Open the file with `om config`. Use `--config-dir <dir>` on any subcommand
-to point at an alternate config location.
+Open the file with `om config`.
 
 ## Frontmatter schema
 

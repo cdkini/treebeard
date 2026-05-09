@@ -100,7 +100,7 @@ def test_empty_vault_skips_picker(
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", capture=capture)
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
     assert "nothing to archive" in result.output
     assert capture == []
@@ -118,7 +118,7 @@ def test_cancel_moves_nothing(
     _patch_fzf_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout="", returncode=130)
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
     assert (vault / "foo.md").exists()
     assert not (vault / ".om" / "archive").exists()
@@ -136,7 +136,7 @@ def test_single_selection_archives(
     _patch_fzf(monkeypatch, stdout=f"foo  just now\t{target}\n")
     _freeze_archive_clock(monkeypatch, datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC))
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
 
     assert not target.exists()
@@ -159,7 +159,7 @@ def test_multi_selection_shares_timestamp(
     _patch_fzf(monkeypatch, stdout=f"a  just now\t{a}\nb  just now\t{b}\n")
     _freeze_archive_clock(monkeypatch, datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC))
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
 
     archive_dir = vault / ".om" / "archive"
@@ -184,7 +184,7 @@ def test_repeat_archive_of_same_name(
     _patch_fzf(monkeypatch, stdout=f"foo  just now\t{target}\n")
     _freeze_archive_clock(monkeypatch, datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC))
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
 
     # Recreate at the same path and archive again with a later clock.
@@ -192,7 +192,7 @@ def test_repeat_archive_of_same_name(
     _patch_fzf(monkeypatch, stdout=f"foo  just now\t{target}\n")
     _freeze_archive_clock(monkeypatch, datetime(2026, 5, 7, 15, 0, 0, tzinfo=UTC))
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
 
     archive_dir = vault / ".om" / "archive"
@@ -217,7 +217,7 @@ def test_archive_dir_created_lazily(
     _patch_fzf_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout=f"foo  just now\t{target}\n")
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
     assert (vault / ".om" / "archive").is_dir()
 
@@ -236,7 +236,7 @@ def test_archived_file_disappears_from_listing(
     _patch_fzf_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout=f"drop  just now\t{drop}\n")
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
 
     listed = list_recent_notes(vault, None)
@@ -257,7 +257,7 @@ def test_uses_multi_flag(
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
 
-    runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["archive"])
     assert capture, "fzf was not invoked"
     cmd = capture[0]["args"][0]
     assert "--multi" in cmd
@@ -275,7 +275,7 @@ def test_auto_commit_records_archive(
     _patch_fzf_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout=f"foo  just now\t{target}\n")
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
 
     subject = _git_log_subject(vault)
@@ -293,7 +293,7 @@ def test_preview_uses_configured_previewer(
     _patch_fzf_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["archive"])
     assert capture, "fzf was not invoked"
     cmd = capture[0]["args"][0]
     preview_flag = next((a for a in cmd if a.startswith("--preview=")), None)
@@ -324,7 +324,7 @@ def test_archive_drops_index_below_threshold(
     _patch_fzf(monkeypatch, stdout=f"gamma  just now\t{target}\n")
     _freeze_archive_clock(monkeypatch, datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC))
 
-    result = runner.invoke(cli, ["archive", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
 
     assert not target.exists()

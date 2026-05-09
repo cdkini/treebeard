@@ -54,10 +54,9 @@ def seed_default_config(vault: pathlib.Path) -> None:
     """Write `config.toml` to the sandboxed default config dir.
 
     The autouse `_sandbox_default_config_dir` fixture in `conftest.py`
-    redirects `DEFAULT_CONFIG_DIR` to a tmp path so a bare `om` (no
-    `--config-dir`) cannot reach the developer's real `~/.om`. Passing
-    `None` here writes to that sandbox."""
-    Config(vault=vault).save(None)
+    redirects `DEFAULT_CONFIG_DIR` to a tmp path so the CLI cannot reach
+    the developer's real `~/.om`."""
+    Config(vault=vault).save()
 
 
 def install_fake_importer(

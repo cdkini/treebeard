@@ -14,11 +14,7 @@ import subprocess
 import click
 
 from om import dependencies, fzf
-from om.config import (
-    CONFIG_FILENAME,
-    DEFAULT_CONFIG_DIR,
-    load_config,
-)
+from om.config import load_config
 from om.editor import reopen
 from om.ui import OmError
 
@@ -100,16 +96,7 @@ def run(vault: pathlib.Path, editor: str) -> None:
 
 
 @click.command("grep")
-@click.option(
-    "--config-dir",
-    "config_dir",
-    type=click.Path(),
-    default=None,
-    help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
-)
-@click.pass_context
-def command(ctx: click.Context, config_dir: str | None) -> None:
+def command() -> None:
     """Fuzzy-search note contents (ripgrep piped through fzf)."""
-    ctx.ensure_object(dict)["config_dir"] = config_dir
-    cfg = load_config(config_dir)
+    cfg = load_config()
     run(cfg.vault, cfg.editor)

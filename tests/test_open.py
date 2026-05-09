@@ -74,7 +74,7 @@ def test_fails_when_fzf_missing(
         "which",
         lambda name: None if name == "fzf" else f"/usr/bin/{name}",
     )
-    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open"])
     assert result.exit_code != 0
     assert "fzf is required" in result.output
     assert "brew install fzf" in result.output
@@ -88,7 +88,7 @@ def test_empty_vault(
 ) -> None:
     write_cfg(cfg_dir, vault)
     _patch_fzf_present(monkeypatch)
-    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open"])
     assert result.exit_code == 0, result.output
     assert "vault is empty" in result.output
 
@@ -109,7 +109,7 @@ def test_enter_opens_selected(
     fzf_stdout = f"\n\nfoo  (foo)  just now\t{target}\n"
     _patch_fzf(monkeypatch, stdout=fzf_stdout)
 
-    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open"])
     assert result.exit_code == 0, result.output
     assert str(target) in result.output
 
@@ -133,7 +133,7 @@ def test_ctrl_n_with_query_creates_named(
         p.write_text(p.read_text(encoding="utf-8") + "stuff\n", encoding="utf-8")
 
     fake_editor.append(add_body)
-    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open"])
     assert result.exit_code == 0, result.output
     assert (vault / "my-new-idea.md").exists()
 
@@ -156,7 +156,7 @@ def test_ctrl_n_empty_query_creates_scratch(
         p.write_text(p.read_text(encoding="utf-8") + "stuff\n", encoding="utf-8")
 
     fake_editor.append(add_body)
-    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open"])
     assert result.exit_code == 0, result.output
     assert (vault / "scratch-2026-05-07t14-23-05.md").exists()
 
@@ -175,7 +175,7 @@ def test_ctrl_n_query_collides_errors(
     _patch_fzf_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout="foo\nctrl-n\n\n")
 
-    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open"])
     assert result.exit_code != 0
     assert "already exists" in result.output
 
@@ -194,7 +194,7 @@ def test_esc_cancels_silently(
     _patch_fzf_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout="", returncode=130)
 
-    result = runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open"])
     assert result.exit_code == 0, result.output
 
 
@@ -212,7 +212,7 @@ def test_preview_uses_configured_previewer(
     _patch_fzf_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["open"])
     assert capture, "fzf was not invoked"
     cmd = capture[0]["args"][0]
     preview_flag = next((a for a in cmd if a.startswith("--preview=")), None)
@@ -249,7 +249,7 @@ def test_explicit_open_lists_all_notes(
     _patch_fzf_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["open"])
     fzf_input = capture[0]["kwargs"]["input"]
     assert len(fzf_input.strip().split("\n")) == 25
 
@@ -269,7 +269,7 @@ def test_open_with_limit(
     _patch_fzf_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["open", "--config-dir", str(cfg_dir), "--limit", "5"])
+    runner.invoke(cli, ["open", "--limit", "5"])
     fzf_input = capture[0]["kwargs"]["input"]
     assert len(fzf_input.strip().split("\n")) == 5
 
@@ -291,7 +291,7 @@ def test_query_opens_top_match(
     # `--filter` prints the matched stem on stdout, best-first.
     _patch_fzf(monkeypatch, stdout=f"{target.stem}\nbar\n")
 
-    result = runner.invoke(cli, ["open", "foo", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "foo"])
     assert result.exit_code == 0, result.output
     assert str(target) in result.output
 
@@ -311,7 +311,7 @@ def test_query_no_match_errors(
     # fzf exits 1 when nothing matches.
     _patch_fzf(monkeypatch, stdout="", returncode=1)
 
-    result = runner.invoke(cli, ["open", "zzz", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "zzz"])
     assert result.exit_code != 0
     assert "no note matches 'zzz'" in result.output
     assert "om open" in result.output  # hint points at interactive picker
@@ -335,7 +335,7 @@ def test_query_with_limit_respects_pool(
     # fzf will be handed only 2 stems; the canned stdout names one of them.
     _patch_fzf(monkeypatch, stdout="n4\n", capture=capture)
 
-    result = runner.invoke(cli, ["open", "n", "--limit", "2", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "n", "--limit", "2"])
     assert result.exit_code == 0, result.output
     fzf_input = capture[0]["kwargs"]["input"]
     assert len(fzf_input.strip().split("\n")) == 2
@@ -357,7 +357,7 @@ def test_query_uses_filter_mode(
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="foo\n", capture=capture)
 
-    runner.invoke(cli, ["open", "foo", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["open", "foo"])
     argv = capture[0]["args"][0]
     assert any(a.startswith("--filter=") for a in argv)
     assert not any(a.startswith("--preview=") for a in argv)
@@ -381,7 +381,7 @@ def test_query_with_spaces(
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout=f"{target.stem}\n", capture=capture)
 
-    result = runner.invoke(cli, ["open", "foo", "bar", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["open", "foo", "bar"])
     assert result.exit_code == 0, result.output
     argv = capture[0]["args"][0]
     assert "--filter=foo bar" in argv
@@ -407,7 +407,7 @@ def test_preview_falls_back_to_cat(
     monkeypatch.setattr(deps_mod.shutil, "which", which)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["open", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["open"])
     assert capture, "fzf was not invoked"
     cmd = capture[0]["args"][0]
     preview_flag = next((a for a in cmd if a.startswith("--preview=")), None)

@@ -53,7 +53,7 @@ def test_commits_when_dirty(
     write_cfg(cfg_dir, vault)
 
     before = _commit_count(vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    result = runner.invoke(cli, ["note", "hello"])
     assert result.exit_code == 0, result.output
 
     after = _commit_count(vault)
@@ -73,7 +73,7 @@ def test_uses_subcommand_name_in_message(
     fake_editor.append(_append("hi\n"))
     write_cfg(cfg_dir, vault)
 
-    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["daily"])
     assert result.exit_code == 0, result.output
     assert _head_message(vault).startswith("daily: ")
 
@@ -124,7 +124,7 @@ def test_working_tree_clean_after_successful_command(
     fake_editor.append(_append("body\n"))
     write_cfg(cfg_dir, vault)
 
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    result = runner.invoke(cli, ["note", "hello"])
     assert result.exit_code == 0, result.output
 
     status = _git(vault, "status", "--porcelain").strip()
@@ -152,7 +152,7 @@ def test_timestamp_is_utc_iso_z(
 
     monkeypatch.setattr(cli_mod, "datetime", _FrozenDatetime)
 
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    result = runner.invoke(cli, ["note", "hello"])
     assert result.exit_code == 0, result.output
     assert _head_message(vault) == "note: 2026-05-07T14:23:05Z"
 
@@ -188,7 +188,7 @@ def test_warns_at_default_threshold(
     outputs: list[str] = []
     for i in range(10):
         fake_editor.append(_append(f"body-{i}\n"))
-        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        result = runner.invoke(cli, ["note", f"n{i}"])
         assert result.exit_code == 0, result.output
         outputs.append(result.output)
 
@@ -211,7 +211,7 @@ def test_no_warning_below_threshold(
     outputs: list[str] = []
     for i in range(9):
         fake_editor.append(_append(f"body-{i}\n"))
-        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        result = runner.invoke(cli, ["note", f"n{i}"])
         assert result.exit_code == 0, result.output
         outputs.append(result.output)
 
@@ -234,7 +234,7 @@ def test_threshold_is_configurable(
     outputs: list[str] = []
     for i in range(3):
         fake_editor.append(_append(f"body-{i}\n"))
-        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        result = runner.invoke(cli, ["note", f"n{i}"])
         assert result.exit_code == 0, result.output
         outputs.append(result.output)
 
@@ -257,7 +257,7 @@ def test_silent_without_upstream(
     outputs: list[str] = []
     for i in range(11):
         fake_editor.append(_append(f"body-{i}\n"))
-        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        result = runner.invoke(cli, ["note", f"n{i}"])
         assert result.exit_code == 0, result.output
         outputs.append(result.output)
 
@@ -285,7 +285,7 @@ def test_silent_when_upstream_ref_missing(
     outputs: list[str] = []
     for i in range(11):
         fake_editor.append(_append(f"body-{i}\n"))
-        result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), f"n{i}"])
+        result = runner.invoke(cli, ["note", f"n{i}"])
         assert result.exit_code == 0, result.output
         outputs.append(result.output)
 
@@ -346,7 +346,7 @@ def test_side_jump_target_gets_post_processed(
 
     fake_editor.append(jump_edit)
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "primary"])
+    result = runner.invoke(cli, ["note", "primary"])
     assert result.exit_code == 0, result.output
 
     # Other was renamed by reconcile_filename based on its new title.
@@ -383,7 +383,7 @@ def test_untracked_create_gets_post_processed(
 
     fake_editor.append(create_new)
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "primary"])
+    result = runner.invoke(cli, ["note", "primary"])
     assert result.exit_code == 0, result.output
 
     # New file was post-processed: updated_at was bumped.
@@ -413,7 +413,7 @@ def test_deleted_file_not_post_processed(
 
     fake_editor.append(delete_other)
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "primary"])
+    result = runner.invoke(cli, ["note", "primary"])
     assert result.exit_code == 0, result.output
 
     assert not other.exists()
@@ -456,7 +456,7 @@ def test_archive_subdir_excluded(
 
     fake_editor.append(edit_archived)
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "primary"])
+    result = runner.invoke(cli, ["note", "primary"])
     assert result.exit_code == 0, result.output
 
     # Archive untouched by reconcile (no rename).
@@ -495,7 +495,7 @@ def test_daily_rename_warns_and_preserves_edits(
 
     fake_editor.append(retitle_and_edit)
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["daily"])
     assert result.exit_code == 0, result.output
 
     assert "could not reconcile" in result.output
@@ -530,7 +530,7 @@ def test_post_edit_lands_in_same_commit_as_edit(
     write_cfg(cfg_dir, vault)
 
     before = _commit_count(vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "old-name"])
+    result = runner.invoke(cli, ["note", "old-name"])
     assert result.exit_code == 0, result.output
 
     after = _commit_count(vault)
@@ -571,7 +571,7 @@ def test_auto_index_runs_on_subcommand(
 
     fake_editor.append(_append("more\n"))
     before = _commit_count(vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "alpha"])
+    result = runner.invoke(cli, ["note", "alpha"])
     assert result.exit_code == 0, result.output
 
     # Single new commit covers both the user's edit and the new index file.
@@ -599,13 +599,13 @@ def test_auto_index_idempotent_no_extra_commit(
 
     # First invocation: writes the index in the same commit as the edit.
     fake_editor.append(_append("more\n"))
-    runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "alpha"])
+    runner.invoke(cli, ["note", "alpha"])
     after_first = _commit_count(vault)
 
     # Second invocation: editor saves without changes; index is already
     # current. Working tree must stay clean and HEAD must not advance.
     fake_editor.append(lambda _ed, _p: None)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "alpha"])
+    result = runner.invoke(cli, ["note", "alpha"])
     assert result.exit_code == 0, result.output
     assert _commit_count(vault) == after_first
 
@@ -632,7 +632,7 @@ def test_auto_index_failure_does_not_block_edit(
     write_cfg(cfg_dir, vault)
 
     before = _commit_count(vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    result = runner.invoke(cli, ["note", "hello"])
     assert result.exit_code == 0, result.output
 
     # The user's edit lands in a commit despite the indexer failure.

@@ -19,11 +19,7 @@ import click
 
 from om import fzf, picker, ui
 from om.commands.note import create_named_note, create_scratch
-from om.config import (
-    CONFIG_FILENAME,
-    DEFAULT_CONFIG_DIR,
-    load_config,
-)
+from om.config import load_config
 from om.editor import reopen
 from om.post_edit import PostEditAbort, slugify
 from om.ui import OmError
@@ -161,27 +157,13 @@ def run_query(vault: pathlib.Path, editor: str, query: str, limit: int | None) -
     default=None,
     help="Cap the list to the N most recently edited notes (default: no cap).",
 )
-@click.option(
-    "--config-dir",
-    "config_dir",
-    type=click.Path(),
-    default=None,
-    help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
-)
-@click.pass_context
-def command(
-    ctx: click.Context,
-    query: tuple[str, ...],
-    limit: int | None,
-    config_dir: str | None,
-) -> None:
+def command(query: tuple[str, ...], limit: int | None) -> None:
     """Fuzzy-pick a note across the whole vault and open it.
 
     With no QUERY, opens an interactive picker. With QUERY, opens the top
     fuzzy match against vault filename stems (errors if none match).
     """
-    ctx.ensure_object(dict)["config_dir"] = config_dir
-    cfg = load_config(config_dir)
+    cfg = load_config()
     if query:
         run_query(cfg.vault, cfg.editor, " ".join(query), limit)
     else:

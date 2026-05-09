@@ -23,11 +23,7 @@ import time
 import click
 
 from om import archiver, fzf, picker, ui
-from om.config import (
-    CONFIG_FILENAME,
-    DEFAULT_CONFIG_DIR,
-    load_config,
-)
+from om.config import load_config
 from om.vault import list_recent_notes
 
 
@@ -92,16 +88,7 @@ def run(vault: pathlib.Path, previewer: str) -> None:
 
 
 @click.command("archive")
-@click.option(
-    "--config-dir",
-    "config_dir",
-    type=click.Path(),
-    default=None,
-    help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
-)
-@click.pass_context
-def command(ctx: click.Context, config_dir: str | None) -> None:
+def command() -> None:
     """Soft-delete notes by moving them into `.om/archive/`."""
-    ctx.ensure_object(dict)["config_dir"] = config_dir
-    cfg = load_config(config_dir)
+    cfg = load_config()
     run(cfg.vault, cfg.previewer)

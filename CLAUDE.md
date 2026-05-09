@@ -66,7 +66,7 @@ uv run pytest tests/test_chat.py::test_basic_repl -xvs
 
 Implications when adding a subcommand:
 - Don't write per-command commit / post-edit logic; the hook owns it.
-- The subcommand must set `ctx.obj["config_dir"]` if it accepts `--config-dir`, or the hook resolves the vault from the default config.
+- The hook always resolves the vault from `~/.om/config.toml` (`DEFAULT_CONFIG_DIR`); subcommands don't pass anything down.
 - `PostEditAbort` (filename collision, daily-tag protection) is per-file: the loop must keep going so the user's edits aren't lost when one file can't be reconciled.
 
 ### Chat REPL

@@ -7,27 +7,14 @@ import subprocess
 import click
 
 from om import git, ui
-from om.config import (
-    CONFIG_FILENAME,
-    DEFAULT_CONFIG_DIR,
-    load_config,
-)
+from om.config import load_config
 from om.ui import OmError
 
 
 @click.command("sync")
-@click.option(
-    "--config-dir",
-    "config_dir",
-    type=click.Path(),
-    default=None,
-    help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
-)
-@click.pass_context
-def command(ctx: click.Context, config_dir: str | None) -> None:
+def command() -> None:
     """Pull from and push to the vault's configured git remote."""
-    ctx.ensure_object(dict)["config_dir"] = config_dir
-    cfg = load_config(config_dir)
+    cfg = load_config()
 
     if not git.has_remote(cfg.vault):
         raise OmError(

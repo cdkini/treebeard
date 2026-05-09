@@ -47,12 +47,13 @@ def _isolated_git_global(
 @pytest.fixture(autouse=True)
 def _sandbox_default_config_dir(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Redirect the default config dir away from `~/.om` so any test that
-    invokes the CLI without an explicit `--config-dir` cannot read or
-    write the developer's real vault."""
+) -> pathlib.Path:
+    """Redirect the default config dir away from `~/.om` so the CLI
+    cannot reach the developer's real vault. Returns the sandbox path so
+    fixtures like `cfg_dir` can resolve to it."""
     sandbox = tmp_path_factory.mktemp("om-default-cfg")
     monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_DIR", str(sandbox))
+    return sandbox
 
 
 @pytest.fixture
@@ -69,10 +70,11 @@ def vault(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.fixture
-def cfg_dir(tmp_path: pathlib.Path) -> pathlib.Path:
-    d = tmp_path / "cfg"
-    d.mkdir()
-    return d
+def cfg_dir(_sandbox_default_config_dir: pathlib.Path) -> pathlib.Path:
+    """Resolve to the sandboxed `DEFAULT_CONFIG_DIR` — every CLI call
+    targets it implicitly, so writing to it is the same as writing to
+    `~/.om` in production."""
+    return _sandbox_default_config_dir
 
 
 def write_cfg(

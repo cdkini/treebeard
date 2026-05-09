@@ -62,7 +62,7 @@ def test_fails_when_rg_missing(
         "which",
         lambda name: None if name == "rg" else f"/usr/bin/{name}",
     )
-    result = runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["grep"])
     assert result.exit_code != 0
     assert "ripgrep is required" in result.output
     assert "brew install ripgrep" in result.output
@@ -80,7 +80,7 @@ def test_fails_when_fzf_missing(
         "which",
         lambda name: None if name == "fzf" else f"/usr/bin/{name}",
     )
-    result = runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["grep"])
     assert result.exit_code != 0
     assert "fzf is required" in result.output
 
@@ -107,7 +107,7 @@ def test_enter_opens_at_line(
 
     monkeypatch.setattr(grep_mod, "reopen", fake_reopen)
 
-    result = runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["grep"])
     assert result.exit_code == 0, result.output
     assert captured == [{"path": target, "editor": "vim", "start_line": 3}]
 
@@ -136,7 +136,7 @@ def test_relative_path_resolved_against_vault(
 
     monkeypatch.setattr(grep_mod, "reopen", fake_reopen)
 
-    result = runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["grep"])
     assert result.exit_code == 0, result.output
     assert captured[0]["path"] == vault / "rel.md"
 
@@ -151,7 +151,7 @@ def test_esc_cancels_silently(
     _patch_binaries_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout="", returncode=130)
 
-    result = runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["grep"])
     assert result.exit_code == 0, result.output
     assert result.output == ""
 
@@ -173,7 +173,7 @@ def test_empty_selection_returns(
         "reopen",
         lambda *a, **k: pytest.fail("reopen should not be called on empty selection"),
     )
-    result = runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["grep"])
     assert result.exit_code == 0, result.output
 
 
@@ -187,7 +187,7 @@ def test_preview_uses_bat_when_available(
     _patch_binaries_present(monkeypatch, with_bat=True)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["grep"])
     assert capture, "fzf was not invoked"
     cmd = capture[0]["args"][0]
     preview_flag = next((a for a in cmd if a.startswith("--preview=")), None)
@@ -206,7 +206,7 @@ def test_preview_falls_back_to_cat(
     _patch_binaries_present(monkeypatch, with_bat=False)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["grep"])
     assert capture, "fzf was not invoked"
     cmd = capture[0]["args"][0]
     preview_flag = next((a for a in cmd if a.startswith("--preview=")), None)
@@ -225,7 +225,7 @@ def test_rg_reload_command_shape(
     _patch_binaries_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["grep"])
     call = capture[0]
     cmd = call["args"][0]
     bind_flag = next((a for a in cmd if a.startswith("--bind=change:reload:")), None)
@@ -269,7 +269,7 @@ def test_handles_text_with_colons(
         return path
 
     monkeypatch.setattr(grep_mod, "reopen", fake_reopen)
-    result = runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["grep"])
     assert result.exit_code == 0, result.output
     assert captured == [{"path": target, "start_line": 1}]
 
@@ -289,7 +289,7 @@ def test_handles_vault_path_with_spaces(
     _patch_binaries_present(monkeypatch)
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
-    runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    runner.invoke(cli, ["grep"])
     call = capture[0]
     assert pathlib.Path(call["kwargs"]["cwd"]) == spaced
     bind_flag = next(
@@ -314,6 +314,6 @@ def test_missing_target_file_errors(
     _patch_binaries_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout=f"{vault}/ghost.md:1:1:hit\n")
 
-    result = runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["grep"])
     assert result.exit_code != 0
     assert "no longer exists" in result.output

@@ -23,7 +23,7 @@ def test_uses_subscription_via_sdk(
 ) -> None:
     del freeze_now  # autouse-style: just need it to patch chat._now_utc
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["chat", "--config-dir", str(cfg_dir)], input="hi\n")
+    result = runner.invoke(cli, ["chat"], input="hi\n")
     assert result.exit_code == 0, result.output
 
     transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
@@ -49,7 +49,7 @@ def test_transcript_uses_frozen_timestamp(
 ) -> None:
     del freeze_now, mock_claude_sdk
     write_cfg(cfg_dir, vault)
-    runner.invoke(cli, ["chat", "--config-dir", str(cfg_dir)], input="ping\n")
+    runner.invoke(cli, ["chat"], input="ping\n")
     convo_dir = vault / ".om" / "conversations"
     assert convo_dir.is_dir()
     files = list(convo_dir.glob("chat-*.jsonl"))
@@ -65,7 +65,7 @@ def test_eof_exits_cleanly(
 ) -> None:
     del mock_claude_sdk
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["chat", "--config-dir", str(cfg_dir)], input="")
+    result = runner.invoke(cli, ["chat"], input="")
     assert result.exit_code == 0, result.output
     convo_dir = vault / ".om" / "conversations"
     assert not convo_dir.exists() or not list(convo_dir.glob("chat-*.jsonl"))
@@ -84,7 +84,7 @@ def test_sdk_error_keeps_repl_alive(
     mock_claude_sdk["raise"] = ClaudeSDKError("boom")
     result = runner.invoke(
         cli,
-        ["chat", "--config-dir", str(cfg_dir)],
+        ["chat"],
         input="first\nsecond\n",
     )
     assert result.exit_code == 0, result.output
@@ -122,7 +122,7 @@ def test_auto_commit_picks_up_transcript(
         ],
         check=True,
     )
-    runner.invoke(cli, ["chat", "--config-dir", str(cfg_dir)], input="hi\n")
+    runner.invoke(cli, ["chat"], input="hi\n")
     log = subprocess.run(
         ["git", "-C", str(vault), "log", "--name-only", "--pretty=format:%s"],
         capture_output=True,
@@ -148,7 +148,7 @@ def test_multi_turn_threads_through_one_client(
 
     result = runner.invoke(
         cli,
-        ["chat", "--config-dir", str(cfg_dir)],
+        ["chat"],
         input="one\ntwo\n",
     )
     assert result.exit_code == 0, result.output
@@ -172,7 +172,7 @@ def test_slash_exit_terminates_loop_without_calling_sdk(
     `"the user wrote /exit, here's what that means..."`."""
     del freeze_now
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["chat", "--config-dir", str(cfg_dir)], input="/exit\n")
+    result = runner.invoke(cli, ["chat"], input="/exit\n")
     assert result.exit_code == 0, result.output
     assert mock_claude_sdk["queries"] == []
     convo_dir = vault / ".om" / "conversations"
@@ -193,7 +193,7 @@ def test_slash_exit_after_real_turns_runs_summary(
     mock_claude_sdk["replies"] = [["A1"], ["B2"]]
     result = runner.invoke(
         cli,
-        ["chat", "--config-dir", str(cfg_dir)],
+        ["chat"],
         input="one\ntwo\n/exit\n",
     )
     assert result.exit_code == 0, result.output
@@ -217,7 +217,7 @@ def test_summary_shows_token_totals(
     mock_claude_sdk["replies"] = [["one"], ["two"]]
     result = runner.invoke(
         cli,
-        ["chat", "--config-dir", str(cfg_dir)],
+        ["chat"],
         input="hi\nhi\n/exit\n",
     )
     assert result.exit_code == 0, result.output
@@ -239,7 +239,7 @@ def test_summary_subscription_when_no_costs(
     mock_claude_sdk["cost_usd"] = None
     result = runner.invoke(
         cli,
-        ["chat", "--config-dir", str(cfg_dir)],
+        ["chat"],
         input="hi\n/exit\n",
     )
     assert result.exit_code == 0, result.output
@@ -260,7 +260,7 @@ def test_summary_dollar_when_costs_present(
     mock_claude_sdk["replies"] = [["one"], ["two"]]
     result = runner.invoke(
         cli,
-        ["chat", "--config-dir", str(cfg_dir)],
+        ["chat"],
         input="hi\nhi\n/exit\n",
     )
     assert result.exit_code == 0, result.output
@@ -277,7 +277,7 @@ def test_summary_skipped_when_no_turns(
     """Open chat, exit immediately — no panel, no spurious zeros."""
     del mock_claude_sdk
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["chat", "--config-dir", str(cfg_dir)], input="/exit\n")
+    result = runner.invoke(cli, ["chat"], input="/exit\n")
     assert result.exit_code == 0, result.output
     assert "session summary" not in result.output
 

@@ -48,7 +48,7 @@ def test_creates_named_file_with_frontmatter(
     del freeze_now
     fake_editor.append(append("edited\n"))
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    result = runner.invoke(cli, ["note", "hello"])
     assert result.exit_code == 0, result.output
     path = vault / "hello.md"
     expected_frontmatter = (
@@ -73,7 +73,7 @@ def test_named_discards_when_editor_makes_no_change(
 ) -> None:
     del freeze_now, fake_editor  # empty queue → editor is a no-op
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    result = runner.invoke(cli, ["note", "hello"])
     assert result.exit_code == 0, result.output
     assert not (vault / "hello.md").exists()
     assert "discarded empty note" in result.output
@@ -85,7 +85,7 @@ def test_named_discards_on_editor_failure_via_real_subprocess(
     """Exercises the real subprocess.run path (no fake_editor patch)."""
     del freeze_now
     write_cfg(cfg_dir, vault, editor="false")
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    result = runner.invoke(cli, ["note", "hello"])
     assert result.exit_code != 0
     assert not (vault / "hello.md").exists()
 
@@ -96,7 +96,7 @@ def test_unchanged_via_real_subprocess(
     """Exercises the real subprocess.run path with a successful no-op editor."""
     del freeze_now
     write_cfg(cfg_dir, vault, editor="true")
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    result = runner.invoke(cli, ["note", "hello"])
     assert result.exit_code == 0, result.output
     assert not (vault / "hello.md").exists()
     assert "discarded empty note" in result.output
@@ -112,7 +112,7 @@ def test_slugifies_name(
     del freeze_now
     fake_editor.append(append("body\n"))
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "Sprint Planning!"])
+    result = runner.invoke(cli, ["note", "Sprint Planning!"])
     assert result.exit_code == 0, result.output
     path = vault / "sprint-planning.md"
     assert "title: Sprint Planning!\n" in path.read_text(encoding="utf-8")
@@ -128,11 +128,11 @@ def test_strips_md_extension_and_reopens(
     del freeze_now
     fake_editor.append(append("body\n"))
     write_cfg(cfg_dir, vault)
-    r1 = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "foo.md"])
+    r1 = runner.invoke(cli, ["note", "foo.md"])
     assert r1.exit_code == 0, r1.output
     assert (vault / "foo.md").exists()
     # Reopen with bare name (no editor edit) — should not create a duplicate.
-    r2 = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "foo"])
+    r2 = runner.invoke(cli, ["note", "foo"])
     assert r2.exit_code == 0, r2.output
     assert sorted(p.name for p in vault.glob("*.md")) == ["foo.md"]
 
@@ -148,7 +148,7 @@ def test_unnamed_creates_scratch_in_vault_root(
     del freeze_now
     fake_editor.append(append("just a body\n"))
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["note"])
     assert result.exit_code == 0, result.output
     path = vault / "scratch-2026-05-07t14-23-05.md"
     assert path.exists()
@@ -167,7 +167,7 @@ def test_unnamed_renames_to_slug_when_title_added(
     del freeze_now
     fake_editor.append(set_title("My Great Idea"))
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["note"])
     assert result.exit_code == 0, result.output
     assert (vault / "my-great-idea.md").exists()
     assert not (vault / "scratch-2026-05-07t14-23-05.md").exists()
@@ -189,7 +189,7 @@ def test_unnamed_collision_warns_and_keeps(
     (vault / "todo.md").write_text("pre-existing\n", encoding="utf-8")
     fake_editor.append(set_title("todo"))
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["note"])
     assert result.exit_code == 0, result.output
     assert "could not reconcile" in result.output
     assert "would rename to todo.md but it exists" in result.output
@@ -230,7 +230,7 @@ def test_reopen_does_not_clobber_when_unchanged(
     subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
     subprocess.run(["git", "commit", "--quiet", "-m", "seed"], cwd=vault, check=True)
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "todo"])
+    result = runner.invoke(cli, ["note", "todo"])
     assert result.exit_code == 0, result.output
     assert path.read_text(encoding="utf-8") == original
 
@@ -260,7 +260,7 @@ def test_reopen_bumps_updated_at(
 
     fake_editor.append(append("edited\n"))
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "todo"])
+    result = runner.invoke(cli, ["note", "todo"])
     assert result.exit_code == 0, result.output
     text = path.read_text(encoding="utf-8")
     assert "created_at: 2020-01-01T00:00:00Z\n" in text
@@ -283,7 +283,7 @@ def test_reopen_with_malformed_frontmatter_is_noop(
 
     fake_editor.append(append("more\n"))
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "raw"])
+    result = runner.invoke(cli, ["note", "raw"])
     assert result.exit_code == 0, result.output
     assert path.read_text(encoding="utf-8") == "just a body, no frontmatter\nmore\n"
 
@@ -291,7 +291,7 @@ def test_reopen_with_malformed_frontmatter_is_noop(
 def test_errors_when_no_vault_configured(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     empty_cfg = tmp_path / "empty"
     empty_cfg.mkdir()
-    result = runner.invoke(cli, ["note", "--config-dir", str(empty_cfg), "hi"])
+    result = runner.invoke(cli, ["note", "hi"])
     assert result.exit_code != 0
     assert "no vault configured" in result.output
 
@@ -301,7 +301,7 @@ def test_errors_on_empty_slug(
 ) -> None:
     del freeze_now
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "!!!"])
+    result = runner.invoke(cli, ["note", "!!!"])
     assert result.exit_code != 0
     assert "empty slug" in result.output
 
@@ -321,6 +321,6 @@ def test_named_keeps_user_added_tags(
 
     fake_editor.append(add_tags)
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    result = runner.invoke(cli, ["note", "hello"])
     assert result.exit_code == 0, result.output
     assert "tags: [foo, bar]\n" in (vault / "hello.md").read_text(encoding="utf-8")

@@ -38,7 +38,7 @@ def test_errors_with_no_remote(
 ) -> None:
     write_cfg(cfg_dir, vault)
 
-    result = runner.invoke(cli, ["sync", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["sync"])
 
     assert result.exit_code != 0
     assert "no git remote configured" in result.output
@@ -61,7 +61,7 @@ def test_pulls_and_pushes(
     _git(vault, "commit", "--quiet", "-m", "local change")
 
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["sync", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["sync"])
 
     assert result.exit_code == 0, result.output
     assert "Synced." in result.output
@@ -85,7 +85,7 @@ def test_errors_when_remote_unreachable(
     _git(vault, "remote", "add", "origin", str(tmp_path / "does-not-exist.git"))
 
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["sync", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["sync"])
 
     assert result.exit_code != 0
     assert "sync failed" in result.output
@@ -98,7 +98,7 @@ def test_errors_when_vault_is_missing_git(
     (half / ".om").mkdir(parents=True)
     write_cfg(cfg_dir, half)
 
-    result = runner.invoke(cli, ["sync", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["sync"])
 
     assert result.exit_code != 0
     assert "missing .git/" in result.output

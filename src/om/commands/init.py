@@ -16,9 +16,7 @@ import click
 
 from om import dependencies, git, scaffold, ui
 from om.config import (
-    CONFIG_FILENAME,
     DEFAULT_CHAT_MODEL,
-    DEFAULT_CONFIG_DIR,
     DEFAULT_EDITOR,
     DEFAULT_PREVIEWER,
     Config,
@@ -31,20 +29,10 @@ from om.ui import OmError
 
 @click.command("init")
 @click.argument("path", type=click.Path())
-@click.option(
-    "--config-dir",
-    "config_dir",
-    type=click.Path(),
-    default=None,
-    help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
-)
-@click.pass_context
-def command(ctx: click.Context, path: str, config_dir: str | None) -> None:
+def command(path: str) -> None:
     """Scaffold a new om vault at PATH (or adopt one already there)."""
-    ctx.ensure_object(dict)["config_dir"] = config_dir
-
-    if is_initialized(config_dir):
-        raise OmError(f"{config_path_for(config_dir)} already configured; refusing to overwrite")
+    if is_initialized():
+        raise OmError(f"{config_path_for()} already configured; refusing to overwrite")
 
     problem = _validate_vault_path(path)
     if problem is not None:
@@ -63,7 +51,7 @@ def command(ctx: click.Context, path: str, config_dir: str | None) -> None:
     # vault from another machine) — leave the directory alone and just
     # record where it lives in `~/.om/config.toml`.
     if (vault_path / ".om").is_dir() and (vault_path / ".git").is_dir():
-        config_path = config.save(config_dir)
+        config_path = config.save()
         ui.success(f"Adopted existing vault at {vault_path}")
         ui.success(f"Wrote config to {config_path}")
         return
@@ -76,7 +64,7 @@ def command(ctx: click.Context, path: str, config_dir: str | None) -> None:
     claude_md_path.parent.mkdir(parents=True, exist_ok=True)
     claude_md_path.write_text(scaffold.compose_claude_md(), encoding="utf-8")
 
-    config_path = config.save(config_dir)
+    config_path = config.save()
 
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     git.commit_all(vault_path, f"init: {ts}")

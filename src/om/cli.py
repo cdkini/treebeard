@@ -73,9 +73,6 @@ class RichGroup(click.Group):
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """Root command group."""
-    # Subcommands set ctx.obj["config_dir"] so the auto-commit hook
-    # targets the same vault the command actually used.
-    ctx.ensure_object(dict)
     dependencies.check_all()
     ctx.call_on_close(lambda: _on_close(ctx))
 
@@ -111,9 +108,8 @@ def _on_close(ctx: click.Context) -> None:
     sub = ctx.invoked_subcommand
     if sub is None:
         return
-    config_dir = ctx.obj.get("config_dir")
     try:
-        vault = load_vault_path(config_dir)
+        vault = load_vault_path()
         if vault is None or not (vault / ".git").is_dir():
             return
         _run_post_edit_hooks(vault)
@@ -130,7 +126,7 @@ def _on_close(ctx: click.Context) -> None:
             git.commit_all(vault, f"{sub}: {ts}")
 
         ahead = git.unsynced_commit_count(vault)
-        threshold = load_sync_warn_threshold(config_dir)
+        threshold = load_sync_warn_threshold()
         if ahead is not None and ahead >= threshold:
             ui.warn(f"{ahead} unsynced commits — run [bold]om sync[/bold] to push to remote.")
     except Exception:

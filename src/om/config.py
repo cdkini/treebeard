@@ -70,7 +70,7 @@ class Config:
             f"granola_api_key = {_toml_str(self.granola_api_key)}  # optional\n"
         )
 
-    def save(self, config_dir: str | None) -> pathlib.Path:
+    def save(self, config_dir: str | None = None) -> pathlib.Path:
         """Write `self` to `<config_dir>/config.toml`, creating the
         directory if needed. Returns the file path."""
         path = config_path_for(config_dir)
@@ -83,7 +83,7 @@ def resolve_user_path(raw: str) -> pathlib.Path:
     return pathlib.Path(os.path.expandvars(raw)).expanduser().resolve()
 
 
-def config_path_for(config_dir: str | None) -> pathlib.Path:
+def config_path_for(config_dir: str | None = None) -> pathlib.Path:
     raw = config_dir if config_dir is not None else DEFAULT_CONFIG_DIR
     return resolve_user_path(raw) / CONFIG_FILENAME
 
@@ -105,7 +105,7 @@ def _toml_str(value: str) -> str:
     return f'"{escaped}"'
 
 
-def is_initialized(config_dir: str | None) -> bool:
+def is_initialized(config_dir: str | None = None) -> bool:
     """True if a config file already records a vault or editor.
     `om init` uses this to refuse to overwrite an existing setup."""
     raw = _read_raw(config_path_for(config_dir))
@@ -124,7 +124,7 @@ def is_valid_vault(vault: pathlib.Path) -> tuple[bool, str | None]:
     return True, None
 
 
-def load_config(config_dir: str | None) -> Config:
+def load_config(config_dir: str | None = None) -> Config:
     """Read the config file. Raises `OmError` if no vault is configured,
     the configured vault isn't a valid om vault, or `[sync] warn_threshold`
     is present but not a positive integer. Other optional fields fall
@@ -217,13 +217,13 @@ def _parse_vault_path(value: object) -> pathlib.Path | None:
     return pathlib.Path(value)
 
 
-def load_vault_path(config_dir: str | None) -> pathlib.Path | None:
+def load_vault_path(config_dir: str | None = None) -> pathlib.Path | None:
     """Best-effort vault lookup. Returns None on any read failure so
     callers can no-op silently."""
     return _read_section_field(config_dir, "vault", "path", _parse_vault_path, None)
 
 
-def load_sync_warn_threshold(config_dir: str | None) -> int:
+def load_sync_warn_threshold(config_dir: str | None = None) -> int:
     """Best-effort threshold lookup for the post-command close hook."""
     return _read_section_field(
         config_dir,

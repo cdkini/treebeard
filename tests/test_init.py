@@ -25,11 +25,10 @@ def _stable_dependency_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
 
 
-def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path) -> None:
+def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path, cfg_dir: pathlib.Path) -> None:
     vault = tmp_path / "vault"
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
     assert (vault / ".om").is_dir()
@@ -51,7 +50,10 @@ def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path) -> None:
 
 
 def test_falls_back_to_constants_when_nothing_installed(
-    runner: CliRunner, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    runner: CliRunner,
+    tmp_path: pathlib.Path,
+    cfg_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When no editor/previewer is on PATH, the config.toml falls back
     to the hardcoded `DEFAULT_EDITOR`/`DEFAULT_PREVIEWER` constants.
@@ -64,9 +66,8 @@ def test_falls_back_to_constants_when_nothing_installed(
 
     monkeypatch.setattr(dependencies, "first_available", lambda _deps: None)
     vault = tmp_path / "vault"
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
     data = _read_toml(cfg_dir / "config.toml")
@@ -78,9 +79,8 @@ def test_falls_back_to_constants_when_nothing_installed(
 
 def test_creates_missing_parents(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     nested = tmp_path / "a" / "b" / "c" / "vault"
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(nested), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(nested)])
 
     assert result.exit_code == 0, result.output
     assert (nested / ".om").is_dir()
@@ -90,9 +90,8 @@ def test_creates_missing_parents(runner: CliRunner, tmp_path: pathlib.Path) -> N
 def test_accepts_empty_existing_dir(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
     assert (vault / ".om").is_dir()
@@ -105,9 +104,8 @@ def test_adopts_existing_full_vault(runner: CliRunner, tmp_path: pathlib.Path) -
     (vault / ".om").mkdir(parents=True)
     subprocess.run(["git", "init", "--quiet"], cwd=vault, check=True)
     (vault / "note.md").write_text("preexisting\n", encoding="utf-8")
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
     assert f"Adopted existing vault at {vault}" in result.output
@@ -117,9 +115,8 @@ def test_adopts_existing_full_vault(runner: CliRunner, tmp_path: pathlib.Path) -
 def test_rejects_om_without_git(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     half = tmp_path / "half"
     (half / ".om").mkdir(parents=True)
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(half), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(half)])
 
     assert result.exit_code != 0
     assert f"{half} has .om/ but no .git/" in result.output
@@ -129,9 +126,8 @@ def test_rejects_non_empty_non_vault_dir(runner: CliRunner, tmp_path: pathlib.Pa
     messy = tmp_path / "messy"
     messy.mkdir()
     (messy / "random.txt").write_text("hi", encoding="utf-8")
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(messy), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(messy)])
 
     assert result.exit_code != 0
     assert "is not empty and is not an om vault" in result.output
@@ -140,23 +136,22 @@ def test_rejects_non_empty_non_vault_dir(runner: CliRunner, tmp_path: pathlib.Pa
 def test_rejects_when_path_is_a_file(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     notvault = tmp_path / "notvault"
     notvault.write_text("oops", encoding="utf-8")
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(notvault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(notvault)])
 
     assert result.exit_code != 0
     assert f"{notvault} is not a directory" in result.output
 
 
-def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: pathlib.Path) -> None:
-    cfg_dir = tmp_path / "cfg"
-    cfg_dir.mkdir()
+def test_refuses_to_overwrite_existing_config(
+    runner: CliRunner, tmp_path: pathlib.Path, cfg_dir: pathlib.Path
+) -> None:
     cfg_path = cfg_dir / "config.toml"
     legacy = '[vault]\npath = "/some/old/place"\n\n[editor]\ncommand = "vim"\n'
     cfg_path.write_text(legacy, encoding="utf-8")
 
     vault = tmp_path / "vault"
-    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code != 0
     assert "already configured" in result.output
@@ -165,14 +160,16 @@ def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: pathl
 
 
 def test_tilde_expansion_uses_home_env(
-    runner: CliRunner, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    runner: CliRunner,
+    tmp_path: pathlib.Path,
+    cfg_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
 
-    cfg_dir = tmp_path / "cfg"
-    result = runner.invoke(cli, ["init", "~/vault", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", "~/vault"])
 
     assert result.exit_code == 0, result.output
     assert (fake_home / "vault" / ".om").is_dir()
@@ -183,14 +180,16 @@ def test_tilde_expansion_uses_home_env(
 
 
 def test_relative_path_is_stored_absolute(
-    runner: CliRunner, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    runner: CliRunner,
+    tmp_path: pathlib.Path,
+    cfg_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    cfg_dir = tmp_path / "cfg"
 
     # Use `./vault` rather than bare `vault`: validation rejects bare
     # tokens with no separator to catch typos like `asdfasdf`.
-    result = runner.invoke(cli, ["init", "./vault", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", "./vault"])
 
     assert result.exit_code == 0, result.output
     data = _read_toml(cfg_dir / "config.toml")
@@ -208,9 +207,8 @@ def test_rejects_bare_token(
     """Bare `asdfasdf` (no `/` and no `~`) is almost always a typo —
     surface the error instead of silently treating it as a relative path."""
     monkeypatch.chdir(tmp_path)
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", "asdfasdf", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", "asdfasdf"])
 
     assert result.exit_code != 0
     assert "doesn't look like a path" in result.output
@@ -221,9 +219,8 @@ def test_inherits_global_git_identity(runner: CliRunner, tmp_path: pathlib.Path)
     succeed using whatever the global git config provides (set up by
     the `_isolated_git_global` autouse fixture)."""
     vault = tmp_path / "vault"
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
     log = subprocess.run(
@@ -261,9 +258,8 @@ def test_creates_initial_commit_on_fresh_vault(runner: CliRunner, tmp_path: path
     """A fresh vault with no notes still gets a HEAD so downstream
     commands (sync, the auto-commit hook) don't trip on a commitless repo."""
     vault = tmp_path / "vault"
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
     assert _commit_count(vault) == 1
@@ -279,9 +275,8 @@ def test_adopts_uncommitted_files_into_initial_commit(
     (vault / ".om").mkdir(parents=True)
     subprocess.run(["git", "init", "--quiet"], cwd=vault, check=True)
     (vault / "note.md").write_text("preexisting\n", encoding="utf-8")
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
     assert _commit_count(vault) == 1
@@ -312,9 +307,8 @@ def test_does_not_recommit_when_adopting_repo_with_history(
     (vault / "note.md").write_text("preexisting\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
     subprocess.run(["git", "commit", "--quiet", "-m", "preexisting"], cwd=vault, check=True)
-    cfg_dir = tmp_path / "cfg"
 
-    result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
     # The point of this test is that init itself doesn't add an empty

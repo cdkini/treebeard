@@ -26,7 +26,7 @@ def test_opens_config_file(
 
     fake_editor.append(record)
 
-    result = runner.invoke(cli, ["config", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["config"])
 
     assert result.exit_code == 0, result.output
     assert captured["editor"] == "vim"
@@ -35,7 +35,7 @@ def test_opens_config_file(
 
 
 def test_errors_when_not_initialized(runner: CliRunner, cfg_dir: pathlib.Path) -> None:
-    result = runner.invoke(cli, ["config", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["config"])
 
     assert result.exit_code != 0
     assert "no vault configured" in result.output

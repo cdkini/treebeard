@@ -7,7 +7,7 @@ from datetime import date, datetime
 import click
 
 from om.commands import note as note_cmd
-from om.config import CONFIG_FILENAME, DEFAULT_CONFIG_DIR, load_config
+from om.config import load_config
 from om.editor import edit_with_initial, reopen
 from om.frontmatter import Frontmatter
 from om.scaffold import compose_daily_body
@@ -22,18 +22,9 @@ def _today_local() -> date:
 
 
 @click.command("daily")
-@click.option(
-    "--config-dir",
-    "config_dir",
-    type=click.Path(),
-    default=None,
-    help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
-)
-@click.pass_context
-def command(ctx: click.Context, config_dir: str | None) -> None:
+def command() -> None:
     """Create or open today's daily note in the vault."""
-    ctx.ensure_object(dict)["config_dir"] = config_dir
-    cfg = load_config(config_dir)
+    cfg = load_config()
     today = _today_local()
     path = cfg.vault / f"{today.isoformat()}.md"
     if path.exists():

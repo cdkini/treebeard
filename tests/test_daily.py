@@ -60,7 +60,7 @@ def test_creates_todays_file_with_daily_tag(
     del freeze_now, freeze_today
     fake_editor.append(append("edited\n"))
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["daily"])
     assert result.exit_code == 0, result.output
     path = vault / "2026-05-07.md"
     assert path.read_text(encoding="utf-8") == FROZEN_FRONTMATTER + EMPTY_BODY + "edited\n"
@@ -77,7 +77,7 @@ def test_discards_when_unchanged_and_no_carryover(
 ) -> None:
     del freeze_now, freeze_today, fake_editor  # empty queue → no edit
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["daily"])
     assert result.exit_code == 0, result.output
     assert not (vault / "2026-05-07.md").exists()
     assert "discarded empty note" in result.output
@@ -110,7 +110,7 @@ def test_reopens_existing_daily_preserving_tags(
 
     fake_editor.append(append("more\n"))
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["daily"])
     assert result.exit_code == 0, result.output
     text = path.read_text(encoding="utf-8")
     assert "tags: [daily, journal]\n" in text
@@ -131,7 +131,7 @@ def test_carryover_from_prior_daily_is_injected(
     del freeze_now, freeze_today, fake_editor  # no edit; carryover keeps the file
     _write_prior_daily(vault, "2026-05-06", "- [ ] survives\n- [x] done\n")
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["daily"])
     assert result.exit_code == 0, result.output
     text = (vault / "2026-05-07.md").read_text(encoding="utf-8")
     assert "- [ ] survives (from 05/06)" in text
@@ -167,7 +167,7 @@ def test_does_not_recarry_when_today_already_exists(
 
     fake_editor.append(append(""))  # mtime moves but content unchanged after rewrite
     write_cfg(cfg_dir, vault)
-    result = runner.invoke(cli, ["daily", "--config-dir", str(cfg_dir)])
+    result = runner.invoke(cli, ["daily"])
     assert result.exit_code == 0, result.output
     text = today_path.read_text(encoding="utf-8")
     assert "yesterday's open task" not in text
@@ -177,6 +177,6 @@ def test_does_not_recarry_when_today_already_exists(
 def test_errors_when_no_vault_configured(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     empty_cfg = tmp_path / "empty"
     empty_cfg.mkdir()
-    result = runner.invoke(cli, ["daily", "--config-dir", str(empty_cfg)])
+    result = runner.invoke(cli, ["daily"])
     assert result.exit_code != 0
     assert "no vault configured" in result.output

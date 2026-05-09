@@ -13,11 +13,7 @@ from datetime import UTC, datetime
 
 import click
 
-from om.config import (
-    CONFIG_FILENAME,
-    DEFAULT_CONFIG_DIR,
-    load_config,
-)
+from om.config import load_config
 from om.editor import edit_with_initial, reopen
 from om.frontmatter import Frontmatter
 from om.post_edit import PostEditAbort, scratch_filename, slugify
@@ -30,18 +26,9 @@ def _now_utc() -> datetime:
 
 @click.command("note")
 @click.argument("name", required=False)
-@click.option(
-    "--config-dir",
-    "config_dir",
-    type=click.Path(),
-    default=None,
-    help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
-)
-@click.pass_context
-def command(ctx: click.Context, name: str | None, config_dir: str | None) -> None:
+def command(name: str | None) -> None:
     """Create or open a markdown note in the vault."""
-    ctx.ensure_object(dict)["config_dir"] = config_dir
-    cfg = load_config(config_dir)
+    cfg = load_config()
 
     now = _now_utc()
 
