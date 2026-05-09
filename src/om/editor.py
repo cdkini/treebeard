@@ -20,7 +20,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from om import dependencies, ui
-from om.frontmatter import Frontmatter, split_document
+from om.frontmatter import Frontmatter, Source, split_document
 from om.post_edit import reconcile_filename
 from om.ui import OmError
 
@@ -68,8 +68,23 @@ def apply_post_edit(path: pathlib.Path, *, now: datetime) -> pathlib.Path:
 
     No-op when the file has no parseable frontmatter (`rewrite_with`
     short-circuits) — `reconcile_filename` has the same property.
+
+    Imported notes (`source: import`) opt out of the `updated_at` bump:
+    their timestamp mirrors the upstream system so it can drive the
+    importer's idempotency comparison. We still run filename reconcile.
     """
     contents = path.read_text(encoding="utf-8")
+    parsed = split_document(contents)
+    if parsed is None:
+        # No frontmatter — nothing to bump, nothing to reconcile.
+        return path
+    fm, _ = parsed
+    if fm.source is Source.IMPORT:
+        # Imported notes are owned end-to-end by the importer: their
+        # `updated_at` mirrors the upstream system (so it can drive the
+        # importer's idempotency check), and their filename carries a
+        # source/date prefix that the title-derived slug would erase.
+        return path
 
     def bump(fm: Frontmatter) -> None:
         fm.updated_at = now

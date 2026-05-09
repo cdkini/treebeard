@@ -2,8 +2,9 @@
 
 The `Frontmatter` dataclass parses and serializes the leading `---…---`
 block of a markdown note. It owns the schema (title, source, created_at,
-updated_at, tags) and round-trips any unknown fields verbatim so we
-never lose user data on rewrite.
+updated_at, tags, plus import_source/import_id/import_url for notes
+pulled by `om import`) and round-trips any unknown fields verbatim so
+we never lose user data on rewrite.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ _INLINE_LIST_RE = re.compile(r"^\[(.*)\]$")
 
 class Source(StrEnum):
     USER = "user"
+    IMPORT = "import"
 
 
 @dataclass
@@ -31,6 +33,9 @@ class Frontmatter:
     created_at: datetime
     updated_at: datetime
     tags: list[str] = field(default_factory=list)
+    import_source: str | None = None
+    import_id: str | None = None
+    import_url: str | None = None
     # Lines we don't recognize, preserved verbatim (no trailing newline).
     extra: list[str] = field(default_factory=list)
 
@@ -47,6 +52,12 @@ class Frontmatter:
         lines.append(f"created_at: {self.created_at.strftime(TIMESTAMP_FMT)}")
         lines.append(f"updated_at: {self.updated_at.strftime(TIMESTAMP_FMT)}")
         lines.append(f"tags: [{', '.join(self.tags)}]")
+        if self.import_source is not None:
+            lines.append(f"import_source: {self.import_source}")
+        if self.import_id is not None:
+            lines.append(f"import_id: {self.import_id}")
+        if self.import_url is not None:
+            lines.append(f"import_url: {self.import_url}")
         lines.extend(self.extra)
         lines.append("---")
         return "\n".join(lines) + "\n"
@@ -70,6 +81,9 @@ def split_document(text: str) -> tuple[Frontmatter, str] | None:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     tags: list[str] = []
+    import_source: str | None = None
+    import_id: str | None = None
+    import_url: str | None = None
     extra: list[str] = []
 
     for raw_line in block.split("\n"):
@@ -105,6 +119,12 @@ def split_document(text: str) -> tuple[Frontmatter, str] | None:
                 extra.append(raw_line)
             else:
                 tags = inline
+        elif key == "import_source":
+            import_source = value
+        elif key == "import_id":
+            import_id = value
+        elif key == "import_url":
+            import_url = value
         else:
             extra.append(raw_line)
 
@@ -118,6 +138,9 @@ def split_document(text: str) -> tuple[Frontmatter, str] | None:
             created_at=created_at,
             updated_at=updated_at,
             tags=tags,
+            import_source=import_source,
+            import_id=import_id,
+            import_url=import_url,
             extra=extra,
         ),
         body,

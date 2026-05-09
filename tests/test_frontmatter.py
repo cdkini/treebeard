@@ -100,3 +100,38 @@ def test_inline_tags_round_trip() -> None:
     fm, _ = parsed
     assert fm.tags == ["foo", "bar"]
     assert "tags: [foo, bar]\n" in fm.serialize()
+
+
+def test_user_note_omits_import_fields() -> None:
+    """User-authored notes don't gain empty `import_*` lines on re-serialize."""
+    fm = Frontmatter.new("hello", NOW)
+    text = fm.serialize()
+    assert "import_source" not in text
+    assert "import_id" not in text
+    assert "import_url" not in text
+
+
+def test_import_note_round_trip() -> None:
+    text = (
+        "---\n"
+        "title: 1:1 with Sarah\n"
+        "source: import\n"
+        "created_at: 2026-05-07T14:23:05Z\n"
+        "updated_at: 2026-05-07T15:00:00Z\n"
+        "tags: [meeting]\n"
+        "import_source: granola\n"
+        "import_id: not_abc12345678901\n"
+        "import_url: https://notes.granola.ai/d/not_abc12345678901\n"
+        "---\n"
+        "body\n"
+    )
+    parsed = split_document(text)
+    assert parsed is not None
+    fm, body = parsed
+    assert fm.source is Source.IMPORT
+    assert fm.import_source == "granola"
+    assert fm.import_id == "not_abc12345678901"
+    assert fm.import_url == "https://notes.granola.ai/d/not_abc12345678901"
+    assert body == "body\n"
+    # Round-trip preserves every typed field.
+    assert fm.serialize() + body == text
