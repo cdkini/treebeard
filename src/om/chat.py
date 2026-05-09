@@ -42,6 +42,7 @@ from rich.spinner import Spinner
 from rich.text import Text
 
 from om import ui, vault_layout
+from om.timefmt import now_utc
 from om.ui import status_console
 
 # Read-only tools we expose to the chat session. The user's vault is
@@ -102,10 +103,6 @@ def append_jsonl(path: pathlib.Path, record: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def _now_utc() -> datetime:
-    return datetime.now(UTC)
 
 
 def _path_targets_archive(value: str, vault: pathlib.Path) -> bool:
@@ -175,7 +172,7 @@ def _make_client(vault: pathlib.Path, model: str) -> ClaudeSDKClient:
     chunk at end-of-turn.
     """
     options = ClaudeAgentOptions(
-        system_prompt=_build_system_prompt(_now_utc()),
+        system_prompt=_build_system_prompt(now_utc()),
         tools=list(ALLOWED_TOOLS),
         allowed_tools=list(ALLOWED_TOOLS),
         mcp_servers={},
@@ -207,7 +204,7 @@ def run_repl(vault: pathlib.Path, model: str) -> None:
 
 
 async def _repl_async(vault: pathlib.Path, model: str) -> None:
-    started_at = _now_utc()
+    started_at = now_utc()
     transcript = conversation_path(vault, started_at)
     out = Console(highlight=False)
 
@@ -229,7 +226,7 @@ async def _repl_async(vault: pathlib.Path, model: str) -> None:
 
                 append_jsonl(
                     transcript,
-                    {"ts": _now_utc().isoformat(), "role": "user", "content": user_text},
+                    {"ts": now_utc().isoformat(), "role": "user", "content": user_text},
                 )
 
                 try:
@@ -415,7 +412,7 @@ async def _run_turn(
     status_console.rule(style="dim")
 
     record: dict[str, Any] = {
-        "ts": _now_utc().isoformat(),
+        "ts": now_utc().isoformat(),
         "role": "assistant",
         "content": final_text or "".join(buffer),
         "model": model,

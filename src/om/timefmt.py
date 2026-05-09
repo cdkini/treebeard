@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 _MINUTE = 60
 _HOUR = 60 * _MINUTE
 _DAY = 24 * _HOUR
@@ -24,3 +26,7 @@ def humanize_mtime(seconds_ago: float) -> str:
     if seconds_ago < _WEEK:
         return f"{int(seconds_ago // _DAY)}d ago"
     return f"{int(seconds_ago // _WEEK)}w ago"
+
+
+def now_utc() -> datetime:
+    return datetime.now(UTC)

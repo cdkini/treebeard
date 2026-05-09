@@ -22,6 +22,6 @@ fmt:
 	uv run ruff check --fix .
 
 test:
-	uv run pytest -n auto --cov --cov-report=term-missing --cov-report=html
+	uv run pytest -n auto --cov --cov-report=term-missing --cov-report=html --cov-fail-under=90
 
 ci: lint test

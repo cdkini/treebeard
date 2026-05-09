@@ -6,11 +6,11 @@ from datetime import date, datetime
 
 import click
 
-from om.commands import note as note_cmd
+from om.commands.note import create_named_note
 from om.config import load_config
-from om.editor import edit_with_initial, reopen
-from om.frontmatter import Frontmatter
+from om.editor import reopen
 from om.scaffold import compose_daily_body
+from om.timefmt import now_utc
 from om.todos import extract_carryover
 from om.vault import find_prior_daily
 
@@ -31,12 +31,18 @@ def command() -> None:
         reopen(path, cfg.editor)
         return
 
-    fm = Frontmatter.new(today.isoformat(), note_cmd._now_utc())
-    fm.tags = [DAILY_TAG]
     prior = find_prior_daily(cfg.vault, today)
     carryover: list[str] = []
     if prior is not None:
         prior_path, prior_date = prior
         carryover = extract_carryover(prior_path.read_text(encoding="utf-8"), prior_date)
-    initial = fm.serialize() + compose_daily_body(carryover)
-    edit_with_initial(path, initial, cfg.editor, keep_when_unchanged=bool(carryover))
+    create_named_note(
+        cfg.vault,
+        today.isoformat(),
+        today.isoformat(),
+        now_utc(),
+        cfg.editor,
+        tags=[DAILY_TAG],
+        body=compose_daily_body(carryover),
+        keep_when_unchanged=bool(carryover),
+    )

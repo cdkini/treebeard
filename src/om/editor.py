@@ -17,16 +17,12 @@ from __future__ import annotations
 import pathlib
 import subprocess
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 
 from om import dependencies, ui
 from om.frontmatter import Frontmatter, Source, split_document, write_note
 from om.post_edit import reconcile_filename
 from om.ui import OmError
-
-
-def _now_utc() -> datetime:
-    return datetime.now(UTC)
 
 
 def run_editor(editor: str, path: pathlib.Path, *, start_line: int | None = None) -> None:

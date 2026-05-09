@@ -101,3 +101,5 @@ Autouse fixtures sandbox `HOME` and the default config dir, so tests cannot touc
 ## Before declaring work done
 
 `make ci` (lint + test) must pass. The pre-commit hook only runs ruff (format + auto-fix), so basedpyright type errors are *not* caught at commit time — `make ci` is the gate.
+
+Total test coverage must stay **≥ 90%**, enforced by `--cov-fail-under=90` in the `test` target. If a change drops coverage below the threshold, add tests rather than lowering the gate.

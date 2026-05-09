@@ -13,7 +13,6 @@ from __future__ import annotations
 import pathlib
 import subprocess
 import time
-from datetime import UTC, datetime
 
 import click
 
@@ -22,12 +21,9 @@ from om.commands.note import create_named_note, create_scratch
 from om.config import load_config
 from om.editor import reopen
 from om.post_edit import PostEditAbort, slugify
+from om.timefmt import now_utc
 from om.ui import OmError
 from om.vault import list_recent_notes
-
-
-def _now_utc() -> datetime:
-    return datetime.now(UTC)
 
 
 def _run_fzf(lines: list[str], previewer: str) -> tuple[str, str, str]:
@@ -98,7 +94,7 @@ def run_interactive(vault: pathlib.Path, editor: str, previewer: str, limit: int
     query, key, selection = _run_fzf(lines, previewer)
 
     if key == "ctrl-n":
-        now = _now_utc()
+        now = now_utc()
         query = query.strip()
         if query:
             try:

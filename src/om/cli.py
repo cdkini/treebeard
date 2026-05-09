@@ -16,12 +16,13 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from om import __version__, dependencies, editor, git, ui
+from om import __version__, dependencies, git, ui
 from om.commands import iter_commands
 from om.config import load_sync_warn_threshold, load_vault_path
 from om.editor import apply_post_edit
 from om.indexer import build_indexes
 from om.post_edit import PostEditAbort
+from om.timefmt import now_utc
 
 
 class RichGroup(click.Group):
@@ -86,7 +87,7 @@ def _run_post_edit_hooks(vault: pathlib.Path) -> None:
     daily-tag protection) is logged and the loop continues — the user's
     edit stays on disk and the auto-commit captures it.
     """
-    now = editor._now_utc()
+    now = now_utc()
     for path in git.changed_root_md_paths(vault):
         try:
             final = apply_post_edit(path, now=now)
@@ -116,7 +117,7 @@ def _on_close(ctx: click.Context) -> None:
         # Auto-index is a convenience, not load-bearing. Isolate its
         # failures so a broken pass can't sink the user's auto-commit.
         try:
-            index_stats = build_indexes(vault, now=editor._now_utc())
+            index_stats = build_indexes(vault, now=now_utc())
             for warning in index_stats.warnings:
                 ui.warn(warning)
         except Exception as exc:

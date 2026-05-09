@@ -9,7 +9,7 @@ that stay untitled keep their `scratch-*` name.
 from __future__ import annotations
 
 import pathlib
-from datetime import UTC, datetime
+from datetime import datetime
 
 import click
 
@@ -17,11 +17,8 @@ from om.config import load_config
 from om.editor import edit_with_initial, reopen
 from om.frontmatter import Frontmatter
 from om.post_edit import PostEditAbort, scratch_filename, slugify
+from om.timefmt import now_utc
 from om.ui import OmError
-
-
-def _now_utc() -> datetime:
-    return datetime.now(UTC)
 
 
 @click.command("note")
@@ -30,7 +27,7 @@ def command(name: str | None) -> None:
     """Create or open a markdown note in the vault."""
     cfg = load_config()
 
-    now = _now_utc()
+    now = now_utc()
 
     if name is None:
         create_scratch(cfg.vault, now, cfg.editor)
@@ -57,17 +54,25 @@ def create_named_note(
     editor: str,
     *,
     tags: list[str] | None = None,
+    body: str = "",
+    keep_when_unchanged: bool = False,
 ) -> pathlib.Path:
     """Create `vault/{slug}.md` with frontmatter and open the editor.
 
     Returns the seed path. The file may be renamed later by the close
     hook's post-edit sweep if the user changed the title.
+
+    `body` is appended after the frontmatter block (defaults to a single
+    blank line). `keep_when_unchanged=True` retains the file even if the
+    user closes the editor without touching the seed — used for daily
+    notes where the carry-forward is itself meaningful content.
     """
     path = vault / f"{slug}.md"
     fm = Frontmatter.new(title, now)
     if tags:
         fm.tags = list(tags)
-    edit_with_initial(path, fm.serialize() + "\n\n", editor)
+    initial = fm.serialize() + (body or "\n\n")
+    edit_with_initial(path, initial, editor, keep_when_unchanged=keep_when_unchanged)
     return path
 
 

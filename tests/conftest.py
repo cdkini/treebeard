@@ -12,9 +12,11 @@ import pytest
 from click.testing import CliRunner
 
 from om import chat as chat_mod
+from om import cli as cli_mod
 from om import config as config_mod
 from om import editor as editor_mod
 from om import indexer as indexer_mod
+from om import timefmt as timefmt_mod
 from om.commands import daily as daily_cmd
 from om.commands import note as note_cmd
 from om.commands import open_ as open_cmd
@@ -116,17 +118,20 @@ def fake_editor(monkeypatch: pytest.MonkeyPatch) -> list[EditorFake]:
 
 @pytest.fixture
 def freeze_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
-    """Freeze the clocks used by `note` and `editor`. Pass a list of
-    timestamps; each call pops the front, repeating the last one."""
+    """Freeze `om.timefmt.now_utc` everywhere it's been imported. Pass a
+    list of timestamps; each call pops the front, repeating the last
+    one."""
     queue: list[datetime] = [FROZEN_NOW]
 
     def fake_now() -> datetime:
         return queue.pop(0) if len(queue) > 1 else queue[0]
 
-    monkeypatch.setattr(note_cmd, "_now_utc", fake_now)
-    monkeypatch.setattr(editor_mod, "_now_utc", fake_now)
-    monkeypatch.setattr(open_cmd, "_now_utc", fake_now)
-    monkeypatch.setattr(chat_mod, "_now_utc", fake_now)
+    monkeypatch.setattr(timefmt_mod, "now_utc", fake_now)
+    monkeypatch.setattr(note_cmd, "now_utc", fake_now)
+    monkeypatch.setattr(open_cmd, "now_utc", fake_now)
+    monkeypatch.setattr(chat_mod, "now_utc", fake_now)
+    monkeypatch.setattr(daily_cmd, "now_utc", fake_now)
+    monkeypatch.setattr(cli_mod, "now_utc", fake_now)
     monkeypatch.setattr(indexer_mod, "_now_utc", fake_now)
     return queue
 
