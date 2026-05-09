@@ -1,4 +1,4 @@
-"""Tests for `om sync`."""
+"""Tests for `treebeard sync`."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import subprocess
 
 from click.testing import CliRunner
 
-from om.cli import cli
 from tests.conftest import write_cfg
+from treebeard.cli import cli
 
 
 def _git(vault: pathlib.Path, *args: str) -> str:
@@ -95,7 +95,7 @@ def test_errors_when_vault_is_missing_git(
     runner: CliRunner, cfg_dir: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     half = tmp_path / "half"
-    (half / ".om").mkdir(parents=True)
+    (half / ".treebeard").mkdir(parents=True)
     write_cfg(cfg_dir, half)
 
     result = runner.invoke(cli, ["sync"])

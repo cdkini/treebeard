@@ -1,10 +1,10 @@
-"""Tests for `om.timefmt.humanize_mtime`."""
+"""Tests for `treebeard.timefmt.humanize_mtime`."""
 
 from __future__ import annotations
 
 import pytest
 
-from om.timefmt import humanize_mtime
+from treebeard.timefmt import humanize_mtime
 
 
 @pytest.mark.parametrize(

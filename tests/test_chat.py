@@ -1,4 +1,4 @@
-"""Tests for `om chat` — REPL plumbing, transcript, and error handling."""
+"""Tests for `treebeard chat` — REPL plumbing, transcript, and error handling."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ import pytest
 from claude_agent_sdk import ClaudeSDKError
 from click.testing import CliRunner
 
-from om.cli import cli
 from tests.conftest import write_cfg
+from treebeard.cli import cli
 
 
 def test_uses_subscription_via_sdk(
@@ -27,7 +27,7 @@ def test_uses_subscription_via_sdk(
     result = runner.invoke(cli, ["chat"], input="hi\n")
     assert result.exit_code == 0, result.output
 
-    transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
+    transcript = vault / ".treebeard" / "conversations" / "chat-20260507-142305.jsonl"
     assert transcript.exists()
     lines = [json.loads(line) for line in transcript.read_text().splitlines()]
     assert lines[0]["role"] == "user"
@@ -51,7 +51,7 @@ def test_transcript_uses_frozen_timestamp(
     del freeze_now, mock_claude_sdk
     write_cfg(cfg_dir, vault)
     runner.invoke(cli, ["chat"], input="ping\n")
-    convo_dir = vault / ".om" / "conversations"
+    convo_dir = vault / ".treebeard" / "conversations"
     assert convo_dir.is_dir()
     files = list(convo_dir.glob("chat-*.jsonl"))
     assert len(files) == 1
@@ -68,7 +68,7 @@ def test_eof_exits_cleanly(
     write_cfg(cfg_dir, vault)
     result = runner.invoke(cli, ["chat"], input="")
     assert result.exit_code == 0, result.output
-    convo_dir = vault / ".om" / "conversations"
+    convo_dir = vault / ".treebeard" / "conversations"
     assert not convo_dir.exists() or not list(convo_dir.glob("chat-*.jsonl"))
 
 
@@ -91,7 +91,7 @@ def test_sdk_error_keeps_repl_alive(
     assert result.exit_code == 0, result.output
     assert "claude error" in result.output
 
-    transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
+    transcript = vault / ".treebeard" / "conversations" / "chat-20260507-142305.jsonl"
     lines = [json.loads(line) for line in transcript.read_text().splitlines()]
     roles = [line["role"] for line in lines]
     # Both user turns logged; only the second got an assistant reply.
@@ -130,7 +130,7 @@ def test_auto_commit_picks_up_transcript(
         text=True,
         check=True,
     ).stdout
-    assert ".om/conversations/chat-20260507-142305.jsonl" in log
+    assert ".treebeard/conversations/chat-20260507-142305.jsonl" in log
     assert "chat:" in log
 
 
@@ -155,7 +155,7 @@ def test_multi_turn_threads_through_one_client(
     assert result.exit_code == 0, result.output
     assert mock_claude_sdk["queries"] == ["one", "two"]
 
-    transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
+    transcript = vault / ".treebeard" / "conversations" / "chat-20260507-142305.jsonl"
     lines = [json.loads(line) for line in transcript.read_text().splitlines()]
     contents = [line["content"] for line in lines]
     assert contents == ["one", "A1", "two", "B2"]
@@ -176,7 +176,7 @@ def test_slash_exit_terminates_loop_without_calling_sdk(
     result = runner.invoke(cli, ["chat"], input="/exit\n")
     assert result.exit_code == 0, result.output
     assert mock_claude_sdk["queries"] == []
-    convo_dir = vault / ".om" / "conversations"
+    convo_dir = vault / ".treebeard" / "conversations"
     assert not convo_dir.exists() or not list(convo_dir.glob("chat-*.jsonl"))
 
 
@@ -286,13 +286,13 @@ def test_summary_skipped_when_no_turns(
 def test_client_options_open_session_in_vault_with_readonly_tools(
     vault: pathlib.Path,
 ) -> None:
-    """`om chat` should pin the SDK to the vault dir, expose only
+    """`treebeard chat` should pin the SDK to the vault dir, expose only
     read-only tools, allow project-level `.claude/` (so a vault-local
     CLAUDE.md flows through), and override Claude Code's agent system
     prompt with a vault-aware one."""
     from claude_agent_sdk import ClaudeSDKClient
 
-    from om.chat import ALLOWED_TOOLS, _make_client
+    from treebeard.chat import ALLOWED_TOOLS, _make_client
 
     client = _make_client(vault, "sonnet")
     assert isinstance(client, ClaudeSDKClient)
@@ -322,25 +322,25 @@ def test_client_options_open_session_in_vault_with_readonly_tools(
 
 def test_archive_guard_denies_read_into_archive(vault: pathlib.Path) -> None:
     """The PreToolUse hook on Read/Glob/Grep should deny any path that
-    resolves into `<vault>/.om/archive/`. Regression: chat must never
+    resolves into `<vault>/.treebeard/archive/`. Regression: chat must never
     surface archived notes."""
     import asyncio
 
-    from om.chat import _archive_guard_hook
+    from treebeard.chat import _archive_guard_hook
 
     hook = _archive_guard_hook(vault)
 
     cases = [
         # Read with a vault-relative file path inside the archive.
-        ("Read", {"file_path": ".om/archive/2026-05-01__old-note.md"}),
+        ("Read", {"file_path": ".treebeard/archive/2026-05-01__old-note.md"}),
         # Read with an absolute path inside the archive.
-        ("Read", {"file_path": str(vault / ".om" / "archive" / "x.md")}),
+        ("Read", {"file_path": str(vault / ".treebeard" / "archive" / "x.md")}),
         # Glob targeting the archive via path.
-        ("Glob", {"pattern": "*.md", "path": ".om/archive"}),
+        ("Glob", {"pattern": "*.md", "path": ".treebeard/archive"}),
         # Glob targeting the archive via pattern.
-        ("Glob", {"pattern": ".om/archive/**/*.md"}),
+        ("Glob", {"pattern": ".treebeard/archive/**/*.md"}),
         # Grep targeting the archive via path.
-        ("Grep", {"pattern": "TODO", "path": ".om/archive"}),
+        ("Grep", {"pattern": "TODO", "path": ".treebeard/archive"}),
     ]
     for tool_name, tool_input in cases:
         result = asyncio.run(
@@ -375,7 +375,7 @@ def test_archive_guard_denies_read_into_archive(vault: pathlib.Path) -> None:
 def test_make_client_wires_archive_guard_hook(vault: pathlib.Path) -> None:
     """The client options should register a PreToolUse hook on
     Read|Glob|Grep so the archive guard runs before any read tool fires."""
-    from om.chat import _make_client
+    from treebeard.chat import _make_client
 
     client = _make_client(vault, "sonnet")
     options = client.options
@@ -444,7 +444,7 @@ def test_draft_appends_draft_written_event_to_transcript(
     mock_claude_sdk["replies"] = [["clarifying reply"], [_VALID_DRAFT_BLOCK]]
 
     runner.invoke(cli, ["chat"], input="hi\n/draft\n")
-    transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
+    transcript = vault / ".treebeard" / "conversations" / "chat-20260507-142305.jsonl"
     lines = [json.loads(line) for line in transcript.read_text().splitlines()]
     last = lines[-1]
     assert last["role"] == "system"
@@ -468,7 +468,7 @@ def test_draft_marks_synthetic_user_turn_in_jsonl(
     mock_claude_sdk["replies"] = [[_VALID_DRAFT_BLOCK]]
 
     runner.invoke(cli, ["chat"], input="/draft\n")
-    transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
+    transcript = vault / ".treebeard" / "conversations" / "chat-20260507-142305.jsonl"
     lines = [json.loads(line) for line in transcript.read_text().splitlines()]
     synthetic_turns = [
         line
@@ -591,7 +591,7 @@ def test_draft_gives_up_after_two_malformed_replies(
     assert "could not parse draft" in result.output
     # And the panel includes the model's reply so the user can see why.
     assert "still nope" in result.output
-    transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
+    transcript = vault / ".treebeard" / "conversations" / "chat-20260507-142305.jsonl"
     assert transcript.exists()
 
 
@@ -706,14 +706,14 @@ def test_archive_guard_denial_surfaces_in_chat_ui(
     del freeze_now
     write_cfg(cfg_dir, vault)
     deny_msg = (
-        "`.om/archive` is off-limits to chat — these notes were "
+        "`.treebeard/archive` is off-limits to chat — these notes were "
         "archived intentionally and must not be read or searched."
     )
     mock_claude_sdk["tool_calls"] = [
         [
             {
                 "name": "Read",
-                "input": {"file_path": ".om/archive/old.md"},
+                "input": {"file_path": ".treebeard/archive/old.md"},
                 "result": deny_msg,
                 "is_error": True,
             }
@@ -771,7 +771,7 @@ def test_tool_label_formatting_unit() -> None:
     """`tool_label` builds compact titles from each tool's input shape."""
     from claude_agent_sdk import ToolUseBlock
 
-    from om.chat_ui import tool_label
+    from treebeard.chat_ui import tool_label
 
     cases: list[tuple[ToolUseBlock, str]] = [
         (ToolUseBlock(id="x", name="Read", input={"file_path": "notes/foo.md"}), "Read foo.md"),
@@ -807,7 +807,7 @@ def test_tool_label_formatting_unit() -> None:
 
 def test_format_token_count_unit() -> None:
     """`format_token_count` collapses thousands tidily."""
-    from om.chat_ui import format_token_count
+    from treebeard.chat_ui import format_token_count
 
     assert format_token_count(0) == "0"
     assert format_token_count(42) == "42"
@@ -819,7 +819,7 @@ def test_format_token_count_unit() -> None:
 
 def test_format_duration_unit() -> None:
     """Sub-second durations stay in ms; otherwise 1 decimal of seconds."""
-    from om.chat_ui import format_duration
+    from treebeard.chat_ui import format_duration
 
     assert format_duration(50) == "50ms"
     assert format_duration(999) == "999ms"
@@ -832,7 +832,7 @@ def test_summarize_tool_result_unit() -> None:
     archive denial surfaces with friendly prefix."""
     from claude_agent_sdk import ToolResultBlock
 
-    from om.chat_ui import summarize_tool_result
+    from treebeard.chat_ui import summarize_tool_result
 
     # Short string content → first non-empty line.
     assert (
@@ -850,7 +850,7 @@ def test_summarize_tool_result_unit() -> None:
     assert summary.endswith("…")
     assert len(summary) <= 80
     # Archive denial substring → friendly prefix.
-    deny = "`.om/archive` is off-limits to chat — etc"
+    deny = "`.treebeard/archive` is off-limits to chat — etc"
     assert summarize_tool_result(
         ToolResultBlock(tool_use_id="x", content=deny, is_error=True)
     ).startswith("archive denied:")
@@ -877,7 +877,7 @@ def test_summarize_tool_result_unit() -> None:
 
 def test_spinner_text_for_unit() -> None:
     """Spinner labels reflect what the model is actually doing."""
-    from om.chat_ui import SpinnerState, spinner_text_for
+    from treebeard.chat_ui import SpinnerState, spinner_text_for
 
     assert spinner_text_for(SpinnerState.AWAIT) == "thinking…"
     assert spinner_text_for(SpinnerState.COMPOSING) == "composing reply…"
@@ -910,7 +910,7 @@ def test_turn_renderer_tty_mode_renders_response_and_footer(vault: pathlib.Path)
     )
     from rich.console import Console
 
-    from om.chat_ui import TurnRenderer
+    from treebeard.chat_ui import TurnRenderer
 
     del vault  # Just need a fixture for monkeypatched defaults.
 
@@ -1038,7 +1038,7 @@ def test_turn_renderer_finalize_is_idempotent() -> None:
 
     from rich.console import Console
 
-    from om.chat_ui import TurnRenderer
+    from treebeard.chat_ui import TurnRenderer
 
     buf = io.StringIO()
     out = Console(file=buf, force_terminal=False, width=120)
@@ -1056,7 +1056,7 @@ def test_slash_completer_suggests_only_when_buffer_starts_with_slash() -> None:
     so adding a new handler automatically lights up in tab completion."""
     from prompt_toolkit.document import Document
 
-    from om.chat import SLASH_HANDLERS, _SlashCompleter
+    from treebeard.chat import SLASH_HANDLERS, _SlashCompleter
 
     completer = _SlashCompleter(SLASH_HANDLERS.keys())
 
@@ -1088,7 +1088,7 @@ def test_build_prompt_session_returns_none_when_stdin_not_a_tty(
 ) -> None:
     """When stdin isn't a TTY (CliRunner, pipes), prompt_toolkit must
     not be initialised — the `input()` fallback path takes over."""
-    from om.chat import _build_prompt_session
+    from treebeard.chat import _build_prompt_session
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     assert _build_prompt_session() is None
@@ -1101,7 +1101,7 @@ def test_build_prompt_session_constructs_when_stdin_is_a_tty(
     PromptSession wired up with the slash completer."""
     from prompt_toolkit import PromptSession
 
-    from om.chat import _build_prompt_session, _SlashCompleter
+    from treebeard.chat import _build_prompt_session, _SlashCompleter
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     session = _build_prompt_session()
@@ -1120,7 +1120,7 @@ def test_turn_renderer_close_all_lives_marks_pending_tools_interrupted() -> None
     from claude_agent_sdk import AssistantMessage, ToolUseBlock
     from rich.console import Console
 
-    from om.chat_ui import TurnRenderer
+    from treebeard.chat_ui import TurnRenderer
 
     buf = io.StringIO()
     out = Console(file=buf, force_terminal=True, width=120, legacy_windows=False)

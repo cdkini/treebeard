@@ -1,10 +1,10 @@
-"""Tests for `om.frontmatter`."""
+"""Tests for `treebeard.frontmatter`."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from om.frontmatter import Frontmatter, Source, has_source, split_document
+from treebeard.frontmatter import Frontmatter, Source, has_source, split_document
 
 NOW = datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC)
 

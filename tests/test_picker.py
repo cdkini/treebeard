@@ -1,5 +1,5 @@
-"""Unit tests for `om.picker` — row formatting + previewer ladder shared
-by `om open` and `om archive`."""
+"""Unit tests for `treebeard.picker` — row formatting + previewer ladder shared
+by `treebeard open` and `treebeard archive`."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import time
 
 import pytest
 
-from om import dependencies as deps
-from om import picker
+from treebeard import dependencies as deps
+from treebeard import picker
 
 
 def _write_note(path: pathlib.Path, title: str, body: str = "body\n") -> None:

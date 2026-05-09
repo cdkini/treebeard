@@ -1,7 +1,7 @@
-"""Tests for `om.git` — focused on `changed_root_md_paths`, the
+"""Tests for `treebeard.git` — focused on `changed_root_md_paths`, the
 porcelain-based diff used by the CLI close hook.
 
-The other helpers in `om.git` (commit, sync, etc.) are exercised via
+The other helpers in `treebeard.git` (commit, sync, etc.) are exercised via
 `test_auto_commit.py` and `test_sync.py`, which drive them end-to-end
 through the CLI."""
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
-from om import git
+from treebeard import git
 
 
 def _git(vault: pathlib.Path, *args: str) -> str:
@@ -70,9 +70,9 @@ def test_uses_new_path_for_renames(vault: pathlib.Path) -> None:
 
 
 def test_excludes_subdir_md(vault: pathlib.Path) -> None:
-    """Vault is flat — anything under `.om/`, `.git/`, or any subdir is
-    out of scope. Archive lives under `.om/archive/`."""
-    archive_dir = vault / ".om" / "archive"
+    """Vault is flat — anything under `.treebeard/`, `.git/`, or any subdir is
+    out of scope. Archive lives under `.treebeard/archive/`."""
+    archive_dir = vault / ".treebeard" / "archive"
     archive_dir.mkdir(parents=True, exist_ok=True)
     (archive_dir / "old.md").write_text("hi\n", encoding="utf-8")
     (vault / "root.md").write_text("hi\n", encoding="utf-8")
@@ -123,12 +123,12 @@ def test_ensure_initialized_creates_repo(tmp_path: pathlib.Path) -> None:
 
 def test_get_config_missing_returns_none(vault: pathlib.Path) -> None:
     """Unset key → None, not empty string or raise."""
-    assert git.get_config(vault, "om.nonexistent.key") is None
+    assert git.get_config(vault, "treebeard.nonexistent.key") is None
 
 
 def test_set_and_get_config_roundtrip(vault: pathlib.Path) -> None:
-    git.set_config(vault, "om.test.value", "hello")
-    assert git.get_config(vault, "om.test.value") == "hello"
+    git.set_config(vault, "treebeard.test.value", "hello")
+    assert git.get_config(vault, "treebeard.test.value") == "hello"
 
 
 def test_has_changes_clean_then_dirty(vault: pathlib.Path) -> None:
@@ -149,7 +149,7 @@ def test_has_head_after_commit(vault: pathlib.Path) -> None:
 
 
 def test_commit_all_allow_empty_creates_commit(vault: pathlib.Path) -> None:
-    """`om init` calls this to seed a HEAD even if the user has no notes."""
+    """`treebeard init` calls this to seed a HEAD even if the user has no notes."""
     assert not git.has_head(vault)
     git.commit_all_allow_empty(vault, "init")
     assert git.has_head(vault)

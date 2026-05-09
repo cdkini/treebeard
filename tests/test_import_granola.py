@@ -1,4 +1,4 @@
-"""Tests for `om import granola`."""
+"""Tests for `treebeard import granola`."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
-from om.cli import cli
-from om.commands import import_ as import_cmd
-from om.config import Config, config_path_for
-from om.importers.granola import BASE_URL, GranolaImporter
+from treebeard.cli import cli
+from treebeard.commands import import_ as import_cmd
+from treebeard.config import Config, config_path_for
+from treebeard.importers.granola import BASE_URL, GranolaImporter
 
 
 def commit_seed(vault: pathlib.Path) -> None:
@@ -145,7 +145,7 @@ def seed_default_config(vault: pathlib.Path) -> pathlib.Path:
 
     The autouse `_sandbox_default_config_dir` fixture in `conftest.py`
     redirects `DEFAULT_CONFIG_DIR` to a tmp path, so this never touches
-    the developer's real `~/.om`.
+    the developer's real `~/.treebeard`.
     """
     Config(vault=vault).save(None)
     return config_path_for(None)

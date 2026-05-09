@@ -1,4 +1,4 @@
-"""Tests for `om.commands.open_` — fzf invocation and dispatch."""
+"""Tests for `treebeard.commands.open_` — fzf invocation and dispatch."""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from om import dependencies as deps_mod
-from om.cli import cli
-from om.commands import open_ as open_mod
 from tests.conftest import EditorFake, write_cfg
+from treebeard import dependencies as deps_mod
+from treebeard.cli import cli
+from treebeard.commands import open_ as open_mod
 
 
 def _seed_note(vault: pathlib.Path, name: str, title: str, body: str = "body\n") -> pathlib.Path:
@@ -224,7 +224,7 @@ def test_bare_om_shows_help(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bare `om` should print the subcommand list, not run the picker."""
+    """Bare `treebeard` should print the subcommand list, not run the picker."""
     _patch_fzf_present(monkeypatch)
     result = runner.invoke(cli, [])
     assert "Commands" in result.output
@@ -241,7 +241,7 @@ def test_explicit_open_lists_all_notes(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """`om open` (no --limit) should list every note, not just 20."""
+    """`treebeard open` (no --limit) should list every note, not just 20."""
     del freeze_now, fake_editor
     write_cfg(cfg_dir, vault)
     for i in range(25):
@@ -282,7 +282,7 @@ def test_query_opens_top_match(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """`om open foo` runs fzf in --filter mode and opens the top stem match."""
+    """`treebeard open foo` runs fzf in --filter mode and opens the top stem match."""
     del freeze_now, fake_editor
     write_cfg(cfg_dir, vault)
     target = _seed_note(vault, "foo.md", "foo")
@@ -314,7 +314,7 @@ def test_query_no_match_errors(
     result = runner.invoke(cli, ["open", "zzz"])
     assert result.exit_code != 0
     assert "no note matches 'zzz'" in result.output
-    assert "om open" in result.output  # hint points at interactive picker
+    assert "treebeard open" in result.output  # hint points at interactive picker
 
 
 def test_query_with_limit_respects_pool(
@@ -373,7 +373,7 @@ def test_query_with_spaces(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """`om open foo bar` (no quotes) joins to a single fzf query."""
+    """`treebeard open foo bar` (no quotes) joins to a single fzf query."""
     del freeze_now, fake_editor
     write_cfg(cfg_dir, vault)
     target = _seed_note(vault, "foo-bar.md", "foo bar")

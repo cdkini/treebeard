@@ -1,4 +1,4 @@
-"""Tests for `om.post_edit`."""
+"""Tests for `treebeard.post_edit`."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from om.frontmatter import Frontmatter
-from om.post_edit import (
+from treebeard.frontmatter import Frontmatter
+from treebeard.post_edit import (
     PostEditAbort,
     reconcile_filename,
     scratch_filename,

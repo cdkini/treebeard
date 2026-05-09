@@ -1,4 +1,4 @@
-"""Tests for `om init`."""
+"""Tests for `treebeard init`."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import tomllib
 import pytest
 from click.testing import CliRunner
 
-from om.cli import cli
+from treebeard.cli import cli
 
 
 def _read_toml(path: pathlib.Path) -> dict[str, object]:
@@ -31,7 +31,7 @@ def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path, cfg_dir: pathlib.
     result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
-    assert (vault / ".om").is_dir()
+    assert (vault / ".treebeard").is_dir()
     assert (vault / ".git").is_dir()
     assert f"Initialized vault at {vault}" in result.output
     assert f"Wrote config to {cfg_dir / 'config.toml'}" in result.output
@@ -62,7 +62,7 @@ def test_falls_back_to_constants_when_nothing_installed(
     CLI startup dependency check (which also calls `which`) doesn't
     spuriously fail looking for git/fzf/rg.
     """
-    from om import dependencies
+    from treebeard import dependencies
 
     monkeypatch.setattr(dependencies, "first_available", lambda _deps: None)
     vault = tmp_path / "vault"
@@ -83,7 +83,7 @@ def test_creates_missing_parents(runner: CliRunner, tmp_path: pathlib.Path) -> N
     result = runner.invoke(cli, ["init", str(nested)])
 
     assert result.exit_code == 0, result.output
-    assert (nested / ".om").is_dir()
+    assert (nested / ".treebeard").is_dir()
     assert (nested / ".git").is_dir()
 
 
@@ -94,14 +94,14 @@ def test_accepts_empty_existing_dir(runner: CliRunner, tmp_path: pathlib.Path) -
     result = runner.invoke(cli, ["init", str(vault)])
 
     assert result.exit_code == 0, result.output
-    assert (vault / ".om").is_dir()
+    assert (vault / ".treebeard").is_dir()
     assert (vault / ".git").is_dir()
     assert f"Initialized vault at {vault}" in result.output
 
 
 def test_adopts_existing_full_vault(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     vault = tmp_path / "vault"
-    (vault / ".om").mkdir(parents=True)
+    (vault / ".treebeard").mkdir(parents=True)
     subprocess.run(["git", "init", "--quiet"], cwd=vault, check=True)
     (vault / "note.md").write_text("preexisting\n", encoding="utf-8")
 
@@ -114,12 +114,12 @@ def test_adopts_existing_full_vault(runner: CliRunner, tmp_path: pathlib.Path) -
 
 def test_rejects_om_without_git(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     half = tmp_path / "half"
-    (half / ".om").mkdir(parents=True)
+    (half / ".treebeard").mkdir(parents=True)
 
     result = runner.invoke(cli, ["init", str(half)])
 
     assert result.exit_code != 0
-    assert f"{half} has .om/ but no .git/" in result.output
+    assert f"{half} has .treebeard/ but no .git/" in result.output
 
 
 def test_rejects_non_empty_non_vault_dir(runner: CliRunner, tmp_path: pathlib.Path) -> None:
@@ -130,7 +130,7 @@ def test_rejects_non_empty_non_vault_dir(runner: CliRunner, tmp_path: pathlib.Pa
     result = runner.invoke(cli, ["init", str(messy)])
 
     assert result.exit_code != 0
-    assert "is not empty and is not an om vault" in result.output
+    assert "is not empty and is not a treebeard vault" in result.output
 
 
 def test_rejects_when_path_is_a_file(runner: CliRunner, tmp_path: pathlib.Path) -> None:
@@ -172,7 +172,7 @@ def test_tilde_expansion_uses_home_env(
     result = runner.invoke(cli, ["init", "~/vault"])
 
     assert result.exit_code == 0, result.output
-    assert (fake_home / "vault" / ".om").is_dir()
+    assert (fake_home / "vault" / ".treebeard").is_dir()
     data = _read_toml(cfg_dir / "config.toml")
     vault_section = data["vault"]
     assert isinstance(vault_section, dict)
@@ -272,7 +272,7 @@ def test_adopts_uncommitted_files_into_initial_commit(
     """When adopting a vault whose git repo has no commits but has
     uncommitted files, the bootstrap commit picks them up."""
     vault = tmp_path / "vault"
-    (vault / ".om").mkdir(parents=True)
+    (vault / ".treebeard").mkdir(parents=True)
     subprocess.run(["git", "init", "--quiet"], cwd=vault, check=True)
     (vault / "note.md").write_text("preexisting\n", encoding="utf-8")
 
@@ -300,7 +300,7 @@ def test_does_not_recommit_when_adopting_repo_with_history(
     """Adopting a vault that already has commits must not add an empty
     `init:` commit — that would pollute the user's history."""
     vault = tmp_path / "vault"
-    (vault / ".om").mkdir(parents=True)
+    (vault / ".treebeard").mkdir(parents=True)
     subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=vault, check=True)
     subprocess.run(["git", "config", "user.email", "x@y"], cwd=vault, check=True)
     subprocess.run(["git", "config", "user.name", "X"], cwd=vault, check=True)

@@ -1,4 +1,4 @@
-"""Tests for `om note` (CLI integration — pure logic lives in test_todos / test_frontmatter)."""
+"""Tests for `treebeard note` (CLI integration — logic lives in test_todos / test_frontmatter)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import subprocess
 
 from click.testing import CliRunner
 
-from om.cli import cli
 from tests.conftest import FROZEN_LATER, FROZEN_NOW, EditorFake, write_cfg
+from treebeard.cli import cli
 
 
 def append(payload: str) -> EditorFake:
@@ -153,7 +153,7 @@ def test_unnamed_creates_scratch_in_vault_root(
     path = vault / "scratch-2026-05-07t14-23-05.md"
     assert path.exists()
     assert path.read_text(encoding="utf-8").endswith("just a body\n")
-    assert not (vault / ".om" / "drafts").exists()
+    assert not (vault / ".treebeard" / "drafts").exists()
 
 
 def test_unnamed_renames_to_slug_when_title_added(

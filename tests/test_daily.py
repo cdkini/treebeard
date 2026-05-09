@@ -1,4 +1,4 @@
-"""Tests for `om daily` (CLI integration — carryover rules live in test_todos)."""
+"""Tests for `treebeard daily` (CLI integration — carryover rules live in test_todos)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import pathlib
 
 from click.testing import CliRunner
 
-from om.cli import cli
 from tests.conftest import FROZEN_LATER, FROZEN_NOW, EditorFake, write_cfg
+from treebeard.cli import cli
 
 FROZEN_FRONTMATTER = (
     "---\n"

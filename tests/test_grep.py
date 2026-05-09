@@ -1,4 +1,4 @@
-"""Tests for `om.commands.grep` — rg+fzf invocation and dispatch."""
+"""Tests for `treebeard.commands.grep` — rg+fzf invocation and dispatch."""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from om import dependencies as deps_mod
-from om.cli import cli
-from om.commands import grep as grep_mod
 from tests.conftest import write_cfg
+from treebeard import dependencies as deps_mod
+from treebeard.cli import cli
+from treebeard.commands import grep as grep_mod
 
 
 def _patch_binaries_present(monkeypatch: pytest.MonkeyPatch, *, with_bat: bool = True) -> None:
@@ -283,7 +283,7 @@ def test_handles_vault_path_with_spaces(
     """A vault path with spaces must reach fzf as `cwd` (passed via argv,
     not the shell), so the rg reload string need not quote it."""
     spaced = tmp_path / "a vault"
-    (spaced / ".om").mkdir(parents=True)
+    (spaced / ".treebeard").mkdir(parents=True)
     subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=spaced, check=True)
     write_cfg(cfg_dir, spaced)
     _patch_binaries_present(monkeypatch)

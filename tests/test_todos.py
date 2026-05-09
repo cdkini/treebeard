@@ -1,10 +1,10 @@
-"""Tests for `om.todos.extract_carryover` — pure function over text."""
+"""Tests for `treebeard.todos.extract_carryover` — pure function over text."""
 
 from __future__ import annotations
 
 from datetime import date
 
-from om.todos import extract_carryover
+from treebeard.todos import extract_carryover
 
 PRIOR = date(2026, 5, 6)
 

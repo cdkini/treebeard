@@ -1,4 +1,4 @@
-"""Unit tests for `om.archiver` — exercises the helper directly to cover
+"""Unit tests for `treebeard.archiver` — exercises the helper directly to cover
 edge cases (empty input, missing source) that the CLI-driven tests in
 `test_archive.py` don't naturally hit."""
 
@@ -9,22 +9,22 @@ from datetime import UTC, datetime
 
 import pytest
 
-from om import archiver
-from om.ui import OmError
+from treebeard import archiver
+from treebeard.ui import TreebeardError
 
 
 def test_archive_paths_empty_list_is_noop(vault: pathlib.Path) -> None:
-    """Empty input short-circuits before mkdir, so `.om/archive/` stays absent."""
+    """Empty input short-circuits before mkdir, so `.treebeard/archive/` stays absent."""
     out = archiver.archive_paths(vault, [], now=datetime(2026, 5, 7, 14, 0, 0, tzinfo=UTC))
     assert out == []
-    assert not (vault / ".om" / "archive").exists()
+    assert not (vault / ".treebeard" / "archive").exists()
 
 
 def test_archive_paths_missing_source_raises(vault: pathlib.Path) -> None:
     """A path that disappeared between picker and rename must surface as
-    `OmError` rather than the raw FileNotFoundError from `rename`."""
+    `TreebeardError` rather than the raw FileNotFoundError from `rename`."""
     ghost = vault / "ghost.md"
-    with pytest.raises(OmError, match="no longer exists"):
+    with pytest.raises(TreebeardError, match="no longer exists"):
         archiver.archive_paths(vault, [ghost], now=datetime(2026, 5, 7, 14, 0, 0, tzinfo=UTC))
 
 
@@ -35,5 +35,5 @@ def test_archive_stamp_is_filename_safe() -> None:
     assert ":" not in stamp
 
 
-def test_archive_dir_is_under_dot_om(vault: pathlib.Path) -> None:
-    assert archiver.archive_dir(vault) == vault / ".om" / "archive"
+def test_archive_dir_is_under_dot_treebeard(vault: pathlib.Path) -> None:
+    assert archiver.archive_dir(vault) == vault / ".treebeard" / "archive"

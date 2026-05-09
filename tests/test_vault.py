@@ -1,4 +1,4 @@
-"""Tests for `om.vault`."""
+"""Tests for `treebeard.vault`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import os
 import pathlib
 from datetime import date
 
-from om.vault import find_prior_daily, list_recent_notes
+from treebeard.vault import find_prior_daily, list_recent_notes
 
 TODAY = date(2026, 5, 7)
 
@@ -77,8 +77,8 @@ def test_list_recent_notes_empty_vault(tmp_path: pathlib.Path) -> None:
 
 def test_list_recent_notes_skips_subdirs(tmp_path: pathlib.Path) -> None:
     """Vaults are flat. Markdown files in subdirectories — including
-    tooling dirs like `.claude/` (where `om chat`'s project memory
-    lives) — are not user notes and must not appear in `om open`."""
+    tooling dirs like `.claude/` (where `treebeard chat`'s project memory
+    lives) — are not user notes and must not appear in `treebeard open`."""
     nested = _touch(tmp_path, "subdir/inner.md")
     claude_md = _touch(tmp_path, ".claude/CLAUDE.md")
     flat = _touch(tmp_path, "flat.md")

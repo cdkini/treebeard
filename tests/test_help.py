@@ -1,10 +1,10 @@
-"""Tests for `om help` — equivalence with `om --help` and picker invisibility."""
+"""Tests for `treebeard help` — equivalence with `treebeard --help` and picker invisibility."""
 
 from __future__ import annotations
 
 from click.testing import CliRunner
 
-from om.cli import cli
+from treebeard.cli import cli
 
 
 def test_om_help_matches_dash_help(runner: CliRunner) -> None:

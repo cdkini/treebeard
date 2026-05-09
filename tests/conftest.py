@@ -11,16 +11,16 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from om import chat as chat_mod
-from om import cli as cli_mod
-from om import config as config_mod
-from om import editor as editor_mod
-from om import indexer as indexer_mod
-from om import timefmt as timefmt_mod
-from om.commands import daily as daily_cmd
-from om.commands import note as note_cmd
-from om.commands import open_ as open_cmd
-from om.config import Config
+from treebeard import chat as chat_mod
+from treebeard import cli as cli_mod
+from treebeard import config as config_mod
+from treebeard import editor as editor_mod
+from treebeard import indexer as indexer_mod
+from treebeard import timefmt as timefmt_mod
+from treebeard.commands import daily as daily_cmd
+from treebeard.commands import note as note_cmd
+from treebeard.commands import open_ as open_cmd
+from treebeard.config import Config
 
 FROZEN_NOW = datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC)
 FROZEN_LATER = datetime(2026, 5, 7, 15, 0, 0, tzinfo=UTC)
@@ -50,10 +50,10 @@ def _isolated_git_global(
 def _sandbox_default_config_dir(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> pathlib.Path:
-    """Redirect the default config dir away from `~/.om` so the CLI
+    """Redirect the default config dir away from `~/.treebeard` so the CLI
     cannot reach the developer's real vault. Returns the sandbox path so
     fixtures like `cfg_dir` can resolve to it."""
-    sandbox = tmp_path_factory.mktemp("om-default-cfg")
+    sandbox = tmp_path_factory.mktemp("treebeard-default-cfg")
     monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_DIR", str(sandbox))
     return sandbox
 
@@ -66,7 +66,7 @@ def runner() -> CliRunner:
 @pytest.fixture
 def vault(tmp_path: pathlib.Path) -> pathlib.Path:
     v = tmp_path / "vault"
-    (v / ".om").mkdir(parents=True)
+    (v / ".treebeard").mkdir(parents=True)
     subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=v, check=True)
     return v
 
@@ -75,7 +75,7 @@ def vault(tmp_path: pathlib.Path) -> pathlib.Path:
 def cfg_dir(_sandbox_default_config_dir: pathlib.Path) -> pathlib.Path:
     """Resolve to the sandboxed `DEFAULT_CONFIG_DIR` — every CLI call
     targets it implicitly, so writing to it is the same as writing to
-    `~/.om` in production."""
+    `~/.treebeard` in production."""
     return _sandbox_default_config_dir
 
 
@@ -118,7 +118,7 @@ def fake_editor(monkeypatch: pytest.MonkeyPatch) -> list[EditorFake]:
 
 @pytest.fixture
 def freeze_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
-    """Freeze `om.timefmt.now_utc` everywhere it's been imported. Pass a
+    """Freeze `treebeard.timefmt.now_utc` everywhere it's been imported. Pass a
     list of timestamps; each call pops the front, repeating the last
     one."""
     queue: list[datetime] = [FROZEN_NOW]
@@ -143,7 +143,7 @@ def freeze_today(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def mock_claude_sdk(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Patch `om.chat._make_client` with a stub `ClaudeSDKClient` shape
+    """Patch `treebeard.chat._make_client` with a stub `ClaudeSDKClient` shape
     that the Claude Agent SDK exposes. Mutate the returned dict to
     customize per-test behavior:
       - `replies`: list[list[str]] — per-turn token chunks

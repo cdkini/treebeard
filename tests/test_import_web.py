@@ -1,4 +1,4 @@
-"""Tests for `om import web`."""
+"""Tests for `treebeard import web`."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
-from om.cli import cli
-from om.commands import import_ as import_cmd
-from om.config import Config
-from om.importers.web import WebImporter
+from treebeard.cli import cli
+from treebeard.commands import import_ as import_cmd
+from treebeard.config import Config
+from treebeard.importers.web import WebImporter
 
 ARTICLE_HTML = """\
 <!DOCTYPE html>
@@ -55,7 +55,7 @@ def seed_default_config(vault: pathlib.Path) -> None:
 
     The autouse `_sandbox_default_config_dir` fixture in `conftest.py`
     redirects `DEFAULT_CONFIG_DIR` to a tmp path so the CLI cannot reach
-    the developer's real `~/.om`."""
+    the developer's real `~/.treebeard`."""
     Config(vault=vault).save()
 
 

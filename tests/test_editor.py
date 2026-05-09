@@ -1,4 +1,4 @@
-"""Tests for `om.editor` — `apply_post_edit`, the discard branch, and shims."""
+"""Tests for `treebeard.editor` — `apply_post_edit`, the discard branch, and shims."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ import pathlib
 
 import pytest
 
-from om.editor import apply_post_edit, edit_with_initial, reopen
-from om.frontmatter import Frontmatter, Source
-from om.post_edit import PostEditAbort
 from tests.conftest import FROZEN_LATER, FROZEN_NOW, EditorFake
+from treebeard.editor import apply_post_edit, edit_with_initial, reopen
+from treebeard.frontmatter import Frontmatter, Source
+from treebeard.post_edit import PostEditAbort
 
 
 def _seed(

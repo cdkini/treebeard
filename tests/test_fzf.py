@@ -1,8 +1,8 @@
-"""Unit tests for `om.fzf` — the shared fzf argv prefix."""
+"""Unit tests for `treebeard.fzf` — the shared fzf argv prefix."""
 
 from __future__ import annotations
 
-from om import fzf
+from treebeard import fzf
 
 
 def test_base_args_without_header() -> None:

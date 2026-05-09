@@ -1,4 +1,4 @@
-"""Tests for `om config`."""
+"""Tests for `treebeard config`."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import pathlib
 
 from click.testing import CliRunner
 
-from om.cli import cli
-from om.config import config_path_for
 from tests.conftest import EditorFake, write_cfg
+from treebeard.cli import cli
+from treebeard.config import config_path_for
 
 
 def test_opens_config_file(

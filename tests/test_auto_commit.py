@@ -1,4 +1,4 @@
-"""Tests for the CLI-level auto-commit hook in `om.cli`."""
+"""Tests for the CLI-level auto-commit hook in `treebeard.cli`."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from datetime import UTC, datetime
 import pytest
 from click.testing import CliRunner
 
-from om import cli as cli_mod
-from om.cli import cli
 from tests.conftest import EditorFake, write_cfg
+from treebeard import cli as cli_mod
+from treebeard.cli import cli
 
 
 def _git(vault: pathlib.Path, *args: str) -> str:
@@ -103,10 +103,10 @@ def test_silent_when_no_git(
     """If a vault somehow lacks .git/ (e.g. a partial init), the hook
     should swallow the error rather than crash the user's command."""
     half = tmp_path / "half"
-    (half / ".om").mkdir(parents=True)
+    (half / ".treebeard").mkdir(parents=True)
     write_cfg(cfg_dir, half)
 
-    # `om note --help` doesn't load the config so it won't error on the
+    # `treebeard note --help` doesn't load the config so it won't error on the
     # missing .git/ — but the hook will run on close. It must not raise.
     result = runner.invoke(cli, ["note", "--help"])
     assert result.exit_code == 0, result.output
@@ -182,7 +182,7 @@ def test_warns_at_default_threshold(
     _setup_upstream(vault, tmp_path)
     write_cfg(cfg_dir, vault)
 
-    # Each `om note` produces exactly one auto-commit; ten of them
+    # Each `treebeard note` produces exactly one auto-commit; ten of them
     # puts us at the default threshold. The tenth invocation should
     # print the warning.
     outputs: list[str] = []
@@ -193,7 +193,7 @@ def test_warns_at_default_threshold(
         outputs.append(result.output)
 
     assert "10 unsynced commits" in outputs[-1]
-    assert "om sync" in outputs[-1]
+    assert "treebeard sync" in outputs[-1]
 
 
 def test_no_warning_below_threshold(
@@ -333,9 +333,9 @@ def test_side_jump_target_gets_post_processed(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """User opens `primary.md` via `om note`, side-jumps in vim to
+    """User opens `primary.md` via `treebeard note`, side-jumps in vim to
     `other.md`, edits its title. The close hook reconciles `other.md`'s
-    filename even though `om note` never opened it."""
+    filename even though `treebeard note` never opened it."""
     del freeze_now
     other = _seed_committed(vault, "other.md", "other")
     primary = _seed_committed(vault, "primary.md", "primary")
@@ -427,12 +427,12 @@ def test_archive_subdir_excluded(
     fake_editor: list[EditorFake],
     freeze_now: list,
 ) -> None:
-    """A side-jump into `.om/archive/old.md` must NOT be post-processed —
+    """A side-jump into `.treebeard/archive/old.md` must NOT be post-processed —
     archived notes are intentionally frozen."""
     del freeze_now
     primary = _seed_committed(vault, "primary.md", "primary")
 
-    archive_dir = vault / ".om" / "archive"
+    archive_dir = vault / ".treebeard" / "archive"
     archive_dir.mkdir(parents=True, exist_ok=True)
     archived = archive_dir / "old.md"
     archived.write_text(
@@ -550,7 +550,7 @@ def test_post_edit_lands_in_same_commit_as_edit(
 #
 # `_on_close` runs `build_indexes` between the post-edit sweep and the
 # auto-commit, so per-tag index notes stay in sync without a separate
-# `om index` invocation.
+# `treebeard index` invocation.
 
 
 def test_auto_index_runs_on_subcommand(

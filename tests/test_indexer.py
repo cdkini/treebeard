@@ -1,4 +1,4 @@
-"""Tests for `om.indexer` — per-tag index note generation.
+"""Tests for `treebeard.indexer` — per-tag index note generation.
 
 Exercises `build_indexes` directly. The hook-level integration (does it
 actually run on every subcommand, does it land in the same auto-commit as
@@ -10,7 +10,7 @@ from __future__ import annotations
 import pathlib
 from datetime import UTC, datetime
 
-from om.indexer import build_indexes
+from treebeard.indexer import build_indexes
 
 NOW = datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC)
 
@@ -119,7 +119,7 @@ def test_add_note_updates_index(vault: pathlib.Path) -> None:
 
 def test_stale_index_auto_archived(vault: pathlib.Path) -> None:
     """When a tag falls below THRESHOLD, its index is moved into
-    `.om/archive/` so it stops surfacing in `om open` and stops pointing
+    `.treebeard/archive/` so it stops surfacing in `treebeard open` and stops pointing
     at notes that may themselves be archived."""
     seed_note(vault, "a", "Alpha", ["foo"])
     seed_note(vault, "b", "Beta", ["foo"])
@@ -135,7 +135,7 @@ def test_stale_index_auto_archived(vault: pathlib.Path) -> None:
 
     assert [p.name for p in s2.archived] == ["foo.md"]
     assert not (vault / "foo.md").exists()
-    archived = vault / ".om" / "archive" / "2026-05-07T14-23-05Z__foo.md"
+    archived = vault / ".treebeard" / "archive" / "2026-05-07T14-23-05Z__foo.md"
     assert archived.exists()
     # Original body preserved — recovery is a manual `mv` back to root.
     assert archived.read_text(encoding="utf-8") == index_before

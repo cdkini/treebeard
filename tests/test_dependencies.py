@@ -1,11 +1,11 @@
-"""Unit tests for the external-binary registry in `om.dependencies`."""
+"""Unit tests for the external-binary registry in `treebeard.dependencies`."""
 
 from __future__ import annotations
 
 import pytest
 
-from om import dependencies as deps
-from om.ui import OmError
+from treebeard import dependencies as deps
+from treebeard.ui import TreebeardError
 
 
 def test_label_falls_back_to_binary_name() -> None:
@@ -58,11 +58,11 @@ def test_check_all_passes_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_check_all_raises_with_install_hint(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Missing required binary → OmError with the hint baked into the registry."""
+    """Missing required binary → TreebeardError with the hint baked into the registry."""
     monkeypatch.setattr(
         deps.shutil, "which", lambda name: None if name == "fzf" else f"/usr/bin/{name}"
     )
-    with pytest.raises(OmError) as exc:
+    with pytest.raises(TreebeardError) as exc:
         deps.check_all()
     assert "fzf" in str(exc.value)
     assert exc.value.hint is not None
@@ -78,7 +78,7 @@ def test_check_editor_known_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """Configured editor matches a known EDITORS entry but isn't on PATH —
     error uses the registry's install hint."""
     monkeypatch.setattr(deps.shutil, "which", lambda _name: None)
-    with pytest.raises(OmError) as exc:
+    with pytest.raises(TreebeardError) as exc:
         deps.check_editor("nvim")
     assert "neovim" in str(exc.value)
     assert exc.value.hint is not None
@@ -89,11 +89,11 @@ def test_check_editor_unknown_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """User configured a non-registry editor (e.g. `code`) and it's not on
     PATH — error points at config, since we have no install hint."""
     monkeypatch.setattr(deps.shutil, "which", lambda _name: None)
-    with pytest.raises(OmError) as exc:
+    with pytest.raises(TreebeardError) as exc:
         deps.check_editor("code")
     assert "code" in str(exc.value)
     assert exc.value.hint is not None
-    assert "om config" in exc.value.hint
+    assert "treebeard config" in exc.value.hint
 
 
 def test_check_editor_unknown_present(monkeypatch: pytest.MonkeyPatch) -> None:

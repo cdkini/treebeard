@@ -1,4 +1,4 @@
-"""Tests for `om.commands.archive` — fzf-driven soft-delete to .om/archive/."""
+"""Tests for `treebeard.commands.archive` — fzf-driven soft-delete to .treebeard/archive/."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from om import archiver as archiver_mod
-from om import dependencies as deps_mod
-from om.cli import cli
-from om.commands import archive as archive_mod
-from om.indexer import build_indexes
-from om.vault import list_recent_notes
 from tests.conftest import write_cfg
+from treebeard import archiver as archiver_mod
+from treebeard import dependencies as deps_mod
+from treebeard.cli import cli
+from treebeard.commands import archive as archive_mod
+from treebeard.indexer import build_indexes
+from treebeard.vault import list_recent_notes
 
 
 def _seed_note(
@@ -121,7 +121,7 @@ def test_cancel_moves_nothing(
     result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
     assert (vault / "foo.md").exists()
-    assert not (vault / ".om" / "archive").exists()
+    assert not (vault / ".treebeard" / "archive").exists()
 
 
 def test_single_selection_archives(
@@ -140,7 +140,7 @@ def test_single_selection_archives(
     assert result.exit_code == 0, result.output
 
     assert not target.exists()
-    archived = vault / ".om" / "archive" / "2026-05-07T14-23-05Z__foo.md"
+    archived = vault / ".treebeard" / "archive" / "2026-05-07T14-23-05Z__foo.md"
     assert archived.exists()
     assert "archived foo.md" in result.output
 
@@ -162,7 +162,7 @@ def test_multi_selection_shares_timestamp(
     result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
 
-    archive_dir = vault / ".om" / "archive"
+    archive_dir = vault / ".treebeard" / "archive"
     assert (archive_dir / "2026-05-07T14-23-05Z__a.md").exists()
     assert (archive_dir / "2026-05-07T14-23-05Z__b.md").exists()
     assert not a.exists()
@@ -195,7 +195,7 @@ def test_repeat_archive_of_same_name(
     result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
 
-    archive_dir = vault / ".om" / "archive"
+    archive_dir = vault / ".treebeard" / "archive"
     archived = sorted(p.name for p in archive_dir.iterdir())
     assert archived == [
         "2026-05-07T14-23-05Z__foo.md",
@@ -209,17 +209,17 @@ def test_archive_dir_created_lazily(
     vault: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`.om/archive/` only appears once an archive actually happens."""
+    """`.treebeard/archive/` only appears once an archive actually happens."""
     write_cfg(cfg_dir, vault)
     target = _seed_note(vault, "foo.md", "foo")
-    assert not (vault / ".om" / "archive").exists()
+    assert not (vault / ".treebeard" / "archive").exists()
 
     _patch_fzf_present(monkeypatch)
     _patch_fzf(monkeypatch, stdout=f"foo  just now\t{target}\n")
 
     result = runner.invoke(cli, ["archive"])
     assert result.exit_code == 0, result.output
-    assert (vault / ".om" / "archive").is_dir()
+    assert (vault / ".treebeard" / "archive").is_dir()
 
 
 def test_archived_file_disappears_from_listing(
@@ -229,7 +229,7 @@ def test_archived_file_disappears_from_listing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`list_recent_notes` is non-recursive, so archived files vanish
-    from `om open` / `om grep` automatically."""
+    from `treebeard open` / `treebeard grep` automatically."""
     write_cfg(cfg_dir, vault)
     keep = _seed_note(vault, "keep.md", "keep")
     drop = _seed_note(vault, "drop.md", "drop")
@@ -329,7 +329,7 @@ def test_archive_drops_index_below_threshold(
 
     assert not target.exists()
     assert not (vault / "foo.md").exists(), "stale index left at vault root"
-    archive_dir = vault / ".om" / "archive"
+    archive_dir = vault / ".treebeard" / "archive"
     assert (archive_dir / "2026-05-07T14-23-05Z__gamma.md").exists()
     # The indexer pass runs inside `_on_close` with a real-clock `now`,
     # so the stale index gets a wallclock stamp distinct from the

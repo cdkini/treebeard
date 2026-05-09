@@ -7,7 +7,7 @@ install: sync
 	uv tool install --editable --force .
 
 uninstall:
-	uv tool uninstall omniscience
+	uv tool uninstall treebeard
 
 hooks:
 	uv run pre-commit install
