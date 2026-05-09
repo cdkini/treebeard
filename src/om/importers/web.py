@@ -26,7 +26,7 @@ from om.importers import ImportedNote, NoteSummary
 from om.ui import OmError
 
 DEFAULT_TIMEOUT = 30.0
-USER_AGENT = "om/0.1 (+https://github.com/assembledhq/omniscience)"
+USER_AGENT = "om/0.1 (+https://github.com/cdkini/omniscience)"
 
 
 class WebImporter:
