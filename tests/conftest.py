@@ -14,8 +14,8 @@ from click.testing import CliRunner
 from om import chat as chat_mod
 from om import config as config_mod
 from om import editor as editor_mod
+from om import indexer as indexer_mod
 from om.commands import daily as daily_cmd
-from om.commands import index as index_cmd
 from om.commands import note as note_cmd
 from om.commands import open_ as open_cmd
 from om.config import Config
@@ -125,7 +125,7 @@ def freeze_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
     monkeypatch.setattr(editor_mod, "_now_utc", fake_now)
     monkeypatch.setattr(open_cmd, "_now_utc", fake_now)
     monkeypatch.setattr(chat_mod, "_now_utc", fake_now)
-    monkeypatch.setattr(index_cmd, "_now_utc", fake_now)
+    monkeypatch.setattr(indexer_mod, "_now_utc", fake_now)
     return queue
 
 

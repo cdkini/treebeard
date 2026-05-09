@@ -39,8 +39,9 @@ uv run pytest tests/test_chat.py::test_basic_repl -xvs
 `cli()` registers `ctx.call_on_close(lambda: _on_close(ctx))`. On exit of every subcommand (bare `om` prints help and skips the hook):
 
 1. **Post-edit sweep** (`_run_post_edit_hooks`) — runs `editor.apply_post_edit` on every dirty root-level `.md` reported by `git.changed_root_md_paths`. This catches both the file the subcommand opened and any sidetracks (`:e other.md`, wikilinks, `gf`). `post_edit.reconcile_filename` renames each file to `slugify(title)`; daily-tagged notes are exempt; `PostEditAbort` (collision, daily protection) is warned and the loop continues so the user's edit isn't lost.
-2. **Auto-commit** — if `git.has_changes`, `git.commit_all` with subject `<subcommand>: <UTC-timestamp>`.
-3. **Sync-warn** — if local commits ≥ `sync_warn_threshold` (default 10), nag to `om sync`.
+2. **Auto-index** (`om.indexer.build_indexes`) — regenerates per-tag index notes (`<slug(tag)>.md` listing every note carrying that tag, when ≥3 notes do). Idempotent: skips writes when content matches. Wrapped in its own `try` so an indexer failure can't sink the auto-commit; surfaces only `warnings`, drops `stale` to avoid per-command nag.
+3. **Auto-commit** — if `git.has_changes`, `git.commit_all` with subject `<subcommand>: <UTC-timestamp>`. Index file changes from step 2 land in the same commit as the user's edits.
+4. **Sync-warn** — if local commits ≥ `sync_warn_threshold` (default 10), nag to `om sync`.
 
 Implications when adding a subcommand:
 - Don't write per-command commit/post-edit logic; the hook owns it.

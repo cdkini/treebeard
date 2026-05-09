@@ -20,6 +20,7 @@ from om import __version__, dependencies, editor, git, ui
 from om.commands import iter_commands
 from om.config import load_sync_warn_threshold, load_vault_path
 from om.editor import apply_post_edit
+from om.indexer import build_indexes
 from om.post_edit import PostEditAbort
 
 
@@ -116,6 +117,14 @@ def _on_close(ctx: click.Context) -> None:
         if vault is None or not (vault / ".git").is_dir():
             return
         _run_post_edit_hooks(vault)
+        # Auto-index is a convenience, not load-bearing. Isolate its
+        # failures so a broken pass can't sink the user's auto-commit.
+        try:
+            index_stats = build_indexes(vault, now=editor._now_utc())
+            for warning in index_stats.warnings:
+                ui.warn(warning)
+        except Exception as exc:
+            ui.warn(f"auto-index failed: {exc}")
         if git.has_changes(vault):
             ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
             git.commit_all(vault, f"{sub}: {ts}")

@@ -544,3 +544,97 @@ def test_post_edit_lands_in_same_commit_as_edit(
     # Post-conditions on disk.
     assert (vault / "new-name.md").exists()
     assert not seeded.exists()
+
+
+# ---------- Auto-index close-hook tests -------------------------------------
+#
+# `_on_close` runs `build_indexes` between the post-edit sweep and the
+# auto-commit, so per-tag index notes stay in sync without a separate
+# `om index` invocation.
+
+
+def test_auto_index_runs_on_subcommand(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """A subcommand that touches a note in a vault with an eligible tag
+    triggers the auto-index pass; the new index file lands in the same
+    auto-commit as the user's edit."""
+    del freeze_now
+    _seed_committed(vault, "alpha.md", "alpha", tags=["foo"])
+    _seed_committed(vault, "beta.md", "beta", tags=["foo"])
+    _seed_committed(vault, "gamma.md", "gamma", tags=["foo"])
+    write_cfg(cfg_dir, vault)
+
+    fake_editor.append(_append("more\n"))
+    before = _commit_count(vault)
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "alpha"])
+    assert result.exit_code == 0, result.output
+
+    # Single new commit covers both the user's edit and the new index file.
+    assert _commit_count(vault) == before + 1
+    assert (vault / "foo.md").exists()
+    show = _git(vault, "show", "--stat", "HEAD")
+    assert "foo.md" in show
+    assert "alpha.md" in show
+
+
+def test_auto_index_idempotent_no_extra_commit(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """When the index is already up to date and the user's edit is a
+    no-op, the hook must not produce a spurious commit."""
+    del freeze_now
+    _seed_committed(vault, "alpha.md", "alpha", tags=["foo"])
+    _seed_committed(vault, "beta.md", "beta", tags=["foo"])
+    _seed_committed(vault, "gamma.md", "gamma", tags=["foo"])
+    write_cfg(cfg_dir, vault)
+
+    # First invocation: writes the index in the same commit as the edit.
+    fake_editor.append(_append("more\n"))
+    runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "alpha"])
+    after_first = _commit_count(vault)
+
+    # Second invocation: editor saves without changes; index is already
+    # current. Working tree must stay clean and HEAD must not advance.
+    fake_editor.append(lambda _ed, _p: None)
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "alpha"])
+    assert result.exit_code == 0, result.output
+    assert _commit_count(vault) == after_first
+
+
+def test_auto_index_failure_does_not_block_edit(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broken `build_indexes` call must not prevent the user's edit
+    from being committed. The auto-index is wrapped in its own try so
+    its failure is isolated from the auto-commit step."""
+    del freeze_now
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise RuntimeError("indexer exploded")
+
+    monkeypatch.setattr(cli_mod, "build_indexes", boom)
+
+    fake_editor.append(_append("body\n"))
+    write_cfg(cfg_dir, vault)
+
+    before = _commit_count(vault)
+    result = runner.invoke(cli, ["note", "--config-dir", str(cfg_dir), "hello"])
+    assert result.exit_code == 0, result.output
+
+    # The user's edit lands in a commit despite the indexer failure.
+    assert _commit_count(vault) == before + 1
+    assert (vault / "hello.md").exists()

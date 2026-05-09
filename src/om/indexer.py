@@ -1,4 +1,4 @@
-"""`om index` — generate per-tag index notes.
+"""Per-tag index note generation.
 
 For each tag carried by at least `THRESHOLD` non-index notes, materialize a
 `<vault>/<slug(tag)>.md` whose body is an alphabetical list of `[[Title]]`
@@ -9,16 +9,17 @@ Idempotent by design: if the desired body matches what's on disk, the file
 is left alone (no `updated_at` bump, no spurious commit). Notes that exist
 under a tag's filename but lack the `index` marker are treated as
 hand-written and refused with a warning.
+
+Runs as part of the `_on_close` auto-commit hook on every subcommand, so
+indexes stay in sync without a separate `om index` invocation.
 """
 
 from __future__ import annotations
 
 import pathlib
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-import click
-
-from om.config import CONFIG_FILENAME, DEFAULT_CONFIG_DIR, load_config
 from om.frontmatter import Frontmatter, Source, split_document
 from om.post_edit import PostEditAbort, slugify
 
@@ -30,51 +31,49 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
-@click.command("index")
-@click.option(
-    "--config-dir",
-    "config_dir",
-    type=click.Path(),
-    default=None,
-    help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
-)
-@click.pass_context
-def command(ctx: click.Context, config_dir: str | None) -> None:
-    """Generate per-tag index notes for tags with >=3 references."""
-    ctx.ensure_object(dict)["config_dir"] = config_dir
-    cfg = load_config(config_dir)
-    now = _now_utc()
+@dataclass
+class IndexStats:
+    """Counts and warnings from one `build_indexes` pass."""
 
-    corpus = _scan_vault(cfg.vault)
+    wrote: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    skipped: int = 0
+    stale: list[pathlib.Path] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def build_indexes(vault: pathlib.Path, *, now: datetime) -> IndexStats:
+    """Generate per-tag index notes under `vault`. No I/O outside the vault.
+
+    Returns counts plus any warnings (empty-slug tags, hand-written
+    collisions) and stale index paths. Callers decide whether to surface
+    those — the `_on_close` hook drops `stale` to avoid per-command nag,
+    while a future doctor command might report it.
+    """
+    stats = IndexStats()
+    corpus = _scan_vault(vault)
     tag_to_titles = _group_by_tag(corpus)
 
-    wrote = updated = unchanged = skipped = 0
     eligible_tags: set[str] = set()
     for tag, titles in sorted(tag_to_titles.items()):
         if len(titles) < THRESHOLD:
             continue
         eligible_tags.add(tag)
-        result = _upsert_index(cfg.vault, tag, titles, now)
+        result, warning = _upsert_index(vault, tag, titles, now)
+        if warning is not None:
+            stats.warnings.append(warning)
         if result == "wrote":
-            wrote += 1
+            stats.wrote += 1
         elif result == "updated":
-            updated += 1
+            stats.updated += 1
         elif result == "unchanged":
-            unchanged += 1
+            stats.unchanged += 1
         else:
-            skipped += 1
+            stats.skipped += 1
 
-    stale = _find_stale(cfg.vault, eligible_tags)
-    for path in stale:
-        click.echo(
-            f"warning: stale index {path.name} (tag dropped below threshold)",
-            err=True,
-        )
-
-    click.echo(
-        f"wrote {wrote}, updated {updated}, unchanged {unchanged}, "
-        f"skipped {skipped}, stale {len(stale)}"
-    )
+    stats.stale = _find_stale(vault, eligible_tags)
+    return stats
 
 
 def _scan_vault(vault: pathlib.Path) -> list[tuple[pathlib.Path, Frontmatter]]:
@@ -110,28 +109,25 @@ def _build_body(titles: list[str]) -> str:
     return "\n" + "".join(f"- [[{t}]]\n" for t in unique)
 
 
-def _upsert_index(vault: pathlib.Path, tag: str, titles: list[str], now: datetime) -> str:
-    """Create or update `<vault>/<slug(tag)>.md`. Returns one of
-    "wrote" | "updated" | "unchanged" | "skipped"."""
+def _upsert_index(
+    vault: pathlib.Path, tag: str, titles: list[str], now: datetime
+) -> tuple[str, str | None]:
+    """Create or update `<vault>/<slug(tag)>.md`. Returns (result, warning)
+    where result is "wrote" | "updated" | "unchanged" | "skipped"."""
     try:
         slug = slugify(tag)
     except PostEditAbort:
-        click.echo(f"warning: tag {tag!r} produces an empty slug; skipping", err=True)
-        return "skipped"
+        return "skipped", f"tag {tag!r} produces an empty slug; skipping"
     path = vault / f"{slug}.md"
     desired_body = _build_body(titles)
 
     if path.exists():
         parsed = split_document(path.read_text(encoding="utf-8"))
         if parsed is None or INDEX_TAG not in parsed[0].tags:
-            click.echo(
-                f"warning: {path.name} exists but is not an index note; skipping",
-                err=True,
-            )
-            return "skipped"
+            return "skipped", f"{path.name} exists but is not an index note; skipping"
         old_fm, old_body = parsed
         if old_body == desired_body and old_fm.title == tag and old_fm.tags == [INDEX_TAG]:
-            return "unchanged"
+            return "unchanged", None
         new_fm = Frontmatter(
             title=tag,
             source=Source.USER,
@@ -141,12 +137,12 @@ def _upsert_index(vault: pathlib.Path, tag: str, titles: list[str], now: datetim
             extra=old_fm.extra,
         )
         path.write_text(new_fm.serialize() + desired_body, encoding="utf-8")
-        return "updated"
+        return "updated", None
 
     new_fm = Frontmatter.new(tag, now)
     new_fm.tags = [INDEX_TAG]
     path.write_text(new_fm.serialize() + desired_body, encoding="utf-8")
-    return "wrote"
+    return "wrote", None
 
 
 def _find_stale(vault: pathlib.Path, eligible_tags: set[str]) -> list[pathlib.Path]:
