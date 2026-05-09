@@ -20,7 +20,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from om import dependencies, ui
-from om.frontmatter import Frontmatter, Source, split_document, write_note
+from om.frontmatter import Frontmatter, Source, has_source, split_document, write_note
 from om.post_edit import reconcile_filename
 from om.ui import OmError
 
@@ -75,7 +75,7 @@ def apply_post_edit(path: pathlib.Path, *, now: datetime) -> pathlib.Path:
         # No frontmatter — nothing to bump, nothing to reconcile.
         return path
     fm, _ = parsed
-    if fm.source is Source.IMPORT:
+    if has_source(fm, Source.IMPORT):
         # Imported notes are owned end-to-end by the importer: their
         # `updated_at` mirrors the upstream system (so it can drive the
         # importer's idempotency check), and their filename carries a

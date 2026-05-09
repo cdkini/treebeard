@@ -25,12 +25,18 @@ _INLINE_LIST_RE = re.compile(r"^\[(.*)\]$")
 class Source(StrEnum):
     USER = "user"
     IMPORT = "import"
+    LLM = "llm"
 
 
 @dataclass
 class Frontmatter:
     title: str
-    source: Source
+    # Scalar for single-source notes (the common case: `source: user`),
+    # list when a note is co-authored across origins (e.g. `/draft`
+    # writes `source: [user, llm]`). Both shapes round-trip through
+    # `split_document`/`serialize`; a singleton list serializes back to
+    # scalar form so we don't gratuitously list-shape ordinary notes.
+    source: Source | list[Source]
     created_at: datetime
     updated_at: datetime
     tags: list[str] = field(default_factory=list)
@@ -45,11 +51,27 @@ class Frontmatter:
         ts = now if now is not None else datetime.now(UTC)
         return cls(title=title, source=Source.USER, created_at=ts, updated_at=ts)
 
+    @classmethod
+    def new_drafted(cls, title: str, now: datetime | None = None) -> Frontmatter:
+        """Frontmatter for an LLM-drafted note: `source: [user, llm]`.
+
+        User comes first by convention — it encodes that the user drove
+        the intent (initiated the chat, typed `/draft`) and the LLM
+        shaped the prose. Used by the chat REPL's `/draft` handler.
+        """
+        ts = now if now is not None else datetime.now(UTC)
+        return cls(
+            title=title,
+            source=[Source.USER, Source.LLM],
+            created_at=ts,
+            updated_at=ts,
+        )
+
     def serialize(self) -> str:
         """Render as a `---…---\\n` block."""
         lines: list[str] = ["---"]
         lines.append(f"title: {self.title}")
-        lines.append(f"source: {self.source.value}")
+        lines.append(f"source: {_serialize_source(self.source)}")
         lines.append(f"created_at: {self.created_at.strftime(TIMESTAMP_FMT)}")
         lines.append(f"updated_at: {self.updated_at.strftime(TIMESTAMP_FMT)}")
         lines.append(f"tags: [{', '.join(self.tags)}]")
@@ -62,6 +84,31 @@ class Frontmatter:
         lines.extend(self.extra)
         lines.append("---")
         return "\n".join(lines) + "\n"
+
+
+def _serialize_source(source: Source | list[Source]) -> str:
+    """Render `source` in the most compact valid shape: scalar when the
+    note has a single origin, inline list when there are multiple.
+
+    A singleton list serializes back to scalar — keeps round-trips
+    clean for callers that pass `[Source.USER]` instead of `Source.USER`.
+    """
+    if isinstance(source, list):
+        if len(source) == 1:
+            return source[0].value
+        return f"[{', '.join(s.value for s in source)}]"
+    return source.value
+
+
+def has_source(fm: Frontmatter, value: Source) -> bool:
+    """True if `fm.source` is `value` (scalar) or contains it (list).
+
+    Use this in place of `fm.source is Source.X` checks so list-shaped
+    sources (e.g. `[import, llm]`) are handled correctly.
+    """
+    if isinstance(fm.source, list):
+        return value in fm.source
+    return fm.source is value
 
 
 def write_note(path: pathlib.Path, fm: Frontmatter, body: str) -> None:
@@ -83,7 +130,7 @@ def split_document(text: str) -> tuple[Frontmatter, str] | None:
     body = text[match.end() :]
 
     title: str | None = None
-    source: Source | None = None
+    source: Source | list[Source] | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     tags: list[str] = []
@@ -102,10 +149,11 @@ def split_document(text: str) -> tuple[Frontmatter, str] | None:
         if key == "title":
             title = value
         elif key == "source":
-            try:
-                source = Source(value)
-            except ValueError:
+            parsed_source = _parse_source(value)
+            if parsed_source is None:
                 extra.append(raw_line)
+            else:
+                source = parsed_source
         elif key == "created_at":
             parsed = _parse_ts(value)
             if parsed is None:
@@ -156,6 +204,31 @@ def split_document(text: str) -> tuple[Frontmatter, str] | None:
 def _parse_ts(value: str) -> datetime | None:
     try:
         return datetime.strptime(value, TIMESTAMP_FMT).replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def _parse_source(value: str) -> Source | list[Source] | None:
+    """Parse a `source:` value as scalar or inline list.
+
+    Returns None if the value is unparseable so the caller can preserve
+    the raw line in `extra`. List form requires every entry to be a
+    valid `Source`; one unknown entry rejects the whole line (we don't
+    silently drop unknowns from a list — that would lose information).
+    """
+    inline = _parse_inline_list(value)
+    if inline is not None:
+        result: list[Source] = []
+        for item in inline:
+            try:
+                result.append(Source(item))
+            except ValueError:
+                return None
+        if not result:
+            return None
+        return result
+    try:
+        return Source(value)
     except ValueError:
         return None
 

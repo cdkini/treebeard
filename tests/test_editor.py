@@ -7,7 +7,7 @@ import pathlib
 import pytest
 
 from om.editor import apply_post_edit, edit_with_initial, reopen
-from om.frontmatter import Frontmatter
+from om.frontmatter import Frontmatter, Source
 from om.post_edit import PostEditAbort
 from tests.conftest import FROZEN_LATER, FROZEN_NOW, EditorFake
 
@@ -58,6 +58,27 @@ def test_apply_post_edit_raises_on_collision(tmp_path: pathlib.Path) -> None:
         apply_post_edit(path, now=FROZEN_NOW)
     assert path.exists()
     assert (tmp_path / "foo.md").read_text(encoding="utf-8") == "existing\n"
+
+
+def test_apply_post_edit_skips_import_in_list_source(tmp_path: pathlib.Path) -> None:
+    """A note with `source: [import, llm]` (e.g. an imported note that was
+    LLM-rewritten later) still opts out of the `updated_at` bump and
+    filename reconcile — the IMPORT-skip honors any list that contains
+    `import`, not just scalar `source: import`."""
+    path = tmp_path / "imported.md"
+    fm = Frontmatter(
+        title="Original Title",
+        source=[Source.IMPORT, Source.LLM],
+        created_at=FROZEN_NOW,
+        updated_at=FROZEN_NOW,
+    )
+    path.write_text(fm.serialize() + "body\n", encoding="utf-8")
+    final = apply_post_edit(path, now=FROZEN_LATER)
+    # Path unchanged (no rename), and updated_at NOT bumped.
+    assert final == path
+    text = path.read_text(encoding="utf-8")
+    assert "updated_at: 2026-05-07T14:23:05Z\n" in text
+    assert "updated_at: 2026-05-07T15:00:00Z" not in text
 
 
 def test_apply_post_edit_noop_on_unparseable_frontmatter(tmp_path: pathlib.Path) -> None:

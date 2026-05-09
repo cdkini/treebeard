@@ -383,3 +383,254 @@ def test_make_client_wires_archive_guard_hook(vault: pathlib.Path) -> None:
     assert pre_tool_use, "expected a PreToolUse hook matcher"
     matchers = {m.matcher for m in pre_tool_use}
     assert "Read|Glob|Grep" in matchers
+
+
+# ---------------------------------------------------------------------------
+# /draft — synthesis + handoff to vim
+# ---------------------------------------------------------------------------
+
+
+_VALID_DRAFT_BLOCK = (
+    "```draft-note\n"
+    "title: Migration Cutover Notes\n"
+    "---\n"
+    "## Risks\n\n"
+    "Downtime during the cutover window.\n\n"
+    "## Mitigation\n\n"
+    "Rollback plan rehearsed twice.\n"
+    "```\n"
+)
+
+
+def test_draft_synthesizes_and_writes_a_note(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """`/draft` mid-chat: model emits a sentinel block; runtime parses
+    title/body, opens the editor, and lands a `source: [user, llm]`
+    note in the vault."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    # First reply is normal; second (response to /draft) is the block.
+    mock_claude_sdk["replies"] = [["clarifying reply"], [_VALID_DRAFT_BLOCK]]
+
+    result = runner.invoke(cli, ["chat"], input="some context\n/draft\n")
+    assert result.exit_code == 0, result.output
+
+    note_path = vault / "migration-cutover-notes.md"
+    assert note_path.exists(), list(vault.iterdir())
+    text = note_path.read_text(encoding="utf-8")
+    assert "title: Migration Cutover Notes\n" in text
+    assert "source: [user, llm]\n" in text
+    assert "## Risks" in text
+    assert "## Mitigation" in text
+
+
+def test_draft_appends_draft_written_event_to_transcript(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["replies"] = [["clarifying reply"], [_VALID_DRAFT_BLOCK]]
+
+    runner.invoke(cli, ["chat"], input="hi\n/draft\n")
+    transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
+    lines = [json.loads(line) for line in transcript.read_text().splitlines()]
+    last = lines[-1]
+    assert last["role"] == "system"
+    assert last["event"] == "draft_written"
+    assert last["path"].endswith("migration-cutover-notes.md")
+
+
+def test_draft_marks_synthetic_user_turn_in_jsonl(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """The synthesis instruction is logged as a user turn (the model
+    sees it that way), but tagged `meta.synthetic=true` so the
+    transcript is honest about the injection."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["replies"] = [[_VALID_DRAFT_BLOCK]]
+
+    runner.invoke(cli, ["chat"], input="/draft\n")
+    transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
+    lines = [json.loads(line) for line in transcript.read_text().splitlines()]
+    synthetic_turns = [
+        line
+        for line in lines
+        if line.get("role") == "user" and line.get("meta", {}).get("synthetic")
+    ]
+    assert len(synthetic_turns) == 1
+    assert "Synthesize the conversation" in synthetic_turns[0]["content"]
+
+
+def test_draft_terminates_session_after_writing(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """After `/draft` lands a note, the REPL must end — any further
+    input on stdin should be ignored. We verify by feeding a third
+    line that, if consumed, would show up in `queries`."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["replies"] = [[_VALID_DRAFT_BLOCK]]
+
+    result = runner.invoke(cli, ["chat"], input="/draft\nthis line should never reach the model\n")
+    assert result.exit_code == 0, result.output
+    # Only the synthesis instruction reached the SDK — not the third line.
+    assert mock_claude_sdk["queries"] == [
+        q for q in mock_claude_sdk["queries"] if "Synthesize the conversation" in q
+    ]
+    assert len(mock_claude_sdk["queries"]) == 1
+
+
+def test_draft_keeps_note_when_editor_is_a_noop(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """Empty `fake_editor` queue = user saved without editing. The
+    LLM-synthesized body is meaningful content, so we keep the file
+    (`keep_when_unchanged=True`)."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["replies"] = [[_VALID_DRAFT_BLOCK]]
+
+    runner.invoke(cli, ["chat"], input="/draft\n")
+    note_path = vault / "migration-cutover-notes.md"
+    assert note_path.exists()
+
+
+def test_draft_resolves_filename_collision_with_suffix(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """When `<slug>.md` already exists, the draft should land at
+    `<slug>-1.md` rather than overwrite."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    (vault / "migration-cutover-notes.md").write_text("preexisting\n", encoding="utf-8")
+    mock_claude_sdk["replies"] = [[_VALID_DRAFT_BLOCK]]
+
+    runner.invoke(cli, ["chat"], input="/draft\n")
+    assert (vault / "migration-cutover-notes.md").read_text(encoding="utf-8") == "preexisting\n"
+    assert (vault / "migration-cutover-notes-1.md").exists()
+
+
+def test_draft_reprompts_once_then_succeeds_on_malformed_block(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """First synthesis reply is malformed; runtime injects a re-prompt;
+    second reply is well-formed; note still lands."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["replies"] = [
+        ["sorry, here is your draft: lots of prose without a fence"],
+        [_VALID_DRAFT_BLOCK],
+    ]
+
+    result = runner.invoke(cli, ["chat"], input="/draft\n")
+    assert result.exit_code == 0, result.output
+    assert (vault / "migration-cutover-notes.md").exists()
+    # Two queries reached the SDK: the synthesis instruction + the re-prompt.
+    assert len(mock_claude_sdk["queries"]) == 2
+    assert "did not parse" in mock_claude_sdk["queries"][1]
+
+
+def test_draft_gives_up_after_two_malformed_replies(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """Both synthesis replies malformed: error printed, no note written,
+    REPL ends. The transcript still exists for audit."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["replies"] = [["nope"], ["still nope"]]
+
+    result = runner.invoke(cli, ["chat"], input="/draft\n")
+    assert result.exit_code == 0, result.output
+    md_files = list(vault.glob("*.md"))
+    assert md_files == [], md_files
+    # The failure surfaces as a Rich panel — the title is unique enough
+    # to assert on without coupling to panel chrome.
+    assert "could not parse draft" in result.output
+    # And the panel includes the model's reply so the user can see why.
+    assert "still nope" in result.output
+    transcript = vault / ".om" / "conversations" / "chat-20260507-142305.jsonl"
+    assert transcript.exists()
+
+
+def test_draft_falls_back_to_scratch_when_title_unslugifiable(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """Title that `slugify` rejects (e.g. all punctuation) → note
+    lands at a `scratch-*.md` filename rather than failing."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["replies"] = [["```draft-note\ntitle: !!!\n---\nSome body content.\n```\n"]]
+
+    result = runner.invoke(cli, ["chat"], input="/draft\n")
+    assert result.exit_code == 0, result.output
+    scratch_files = list(vault.glob("scratch-*.md"))
+    assert len(scratch_files) == 1, list(vault.iterdir())
+    text = scratch_files[0].read_text(encoding="utf-8")
+    assert "Some body content." in text
+    assert "source: [user, llm]\n" in text
+
+
+def test_slash_dispatcher_bare_aliases_still_exit(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    freeze_now: list[Any],
+) -> None:
+    """Regression on the dispatcher refactor: the bare aliases `exit`
+    and `quit` (no leading slash) must still terminate the REPL
+    without sending the literal string to the model."""
+    del freeze_now
+    write_cfg(cfg_dir, vault)
+    for word in ("exit", "quit", "/quit"):
+        mock_claude_sdk["queries"].clear()
+        result = runner.invoke(cli, ["chat"], input=f"{word}\n")
+        assert result.exit_code == 0, (word, result.output)
+        assert mock_claude_sdk["queries"] == [], (word, mock_claude_sdk["queries"])

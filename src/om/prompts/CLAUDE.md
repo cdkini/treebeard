@@ -11,9 +11,11 @@ Context for `om chat` — the assistant embedded in this vault.
   (`om-todos.md`, `swe-tooling.md`).
 - Every note has YAML frontmatter with these fields:
   `title`, `source`, `created_at`, `updated_at`, `tags`. Timestamps are
-  UTC ISO-8601 (`2026-05-08T13:20:39Z`). `source: user` means I wrote
-  it; anything else is machine-generated and should be weighted with
-  more skepticism.
+  UTC ISO-8601 (`2026-05-08T13:20:39Z`). `source` is one of `user`,
+  `import`, `llm` — or a list combining them (e.g. `[user, llm]` for
+  notes co-authored via `/draft`). User comes first when present.
+  Anything that isn't pure `user` is machine-shaped and should be
+  weighted with more skepticism.
 - The date of a daily lives in its **filename**, not in frontmatter.
   Reason about dates from filenames — `YYYY-MM-DD.md` is authoritative.
   "Last week" means the seven most recent dailies.
@@ -50,6 +52,10 @@ items are one tight group with no blank line between them:
 > Refs:
 >   - 2026-05-06.md
 >   - projects/migration.md
+
+When asked to draft a note (via the `/draft` slash command), format
+each Refs entry as an Obsidian wikilink — `[[slug|display name]]` —
+instead of a bare filename. The slug is the filename without `.md`.
 
 ## Topics & projects
 <!-- recurring themes, ongoing projects, people you reference often -->

@@ -15,7 +15,7 @@ import click
 
 from om.config import load_config
 from om.editor import edit_with_initial, reopen
-from om.frontmatter import Frontmatter
+from om.frontmatter import Frontmatter, Source
 from om.post_edit import PostEditAbort, scratch_filename, slugify
 from om.timefmt import now_utc
 from om.ui import OmError
@@ -56,6 +56,7 @@ def create_named_note(
     tags: list[str] | None = None,
     body: str = "",
     keep_when_unchanged: bool = False,
+    sources: list[Source] | None = None,
 ) -> pathlib.Path:
     """Create `vault/{slug}.md` with frontmatter and open the editor.
 
@@ -66,9 +67,17 @@ def create_named_note(
     blank line). `keep_when_unchanged=True` retains the file even if the
     user closes the editor without touching the seed — used for daily
     notes where the carry-forward is itself meaningful content.
+
+    `sources` overrides the default scalar `source: user` frontmatter —
+    used by the chat REPL's `/draft` handler to write `source: [user,
+    llm]` for LLM-co-authored notes. When omitted, behaves exactly like
+    `Frontmatter.new`.
     """
     path = vault / f"{slug}.md"
-    fm = Frontmatter.new(title, now)
+    if sources is not None:
+        fm = Frontmatter(title=title, source=list(sources), created_at=now, updated_at=now)
+    else:
+        fm = Frontmatter.new(title, now)
     if tags:
         fm.tags = list(tags)
     initial = fm.serialize() + (body or "\n\n")

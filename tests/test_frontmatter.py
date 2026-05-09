@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from om.frontmatter import Frontmatter, Source, split_document
+from om.frontmatter import Frontmatter, Source, has_source, split_document
 
 NOW = datetime(2026, 5, 7, 14, 23, 5, tzinfo=UTC)
 
@@ -109,6 +109,85 @@ def test_user_note_omits_import_fields() -> None:
     assert "import_source" not in text
     assert "import_id" not in text
     assert "import_url" not in text
+
+
+def test_new_drafted_creates_user_llm_source() -> None:
+    """`/draft` notes get `source: [user, llm]`, user always first."""
+    fm = Frontmatter.new_drafted("hello", NOW)
+    assert fm.source == [Source.USER, Source.LLM]
+    assert fm.created_at == NOW
+    assert fm.updated_at == NOW
+
+
+def test_list_source_serializes_inline() -> None:
+    fm = Frontmatter.new_drafted("hello", NOW)
+    text = fm.serialize()
+    assert "source: [user, llm]" in text
+
+
+def test_list_source_round_trip() -> None:
+    text = (
+        "---\n"
+        "title: drafted\n"
+        "source: [user, llm]\n"
+        "created_at: 2026-05-07T14:23:05Z\n"
+        "updated_at: 2026-05-07T14:23:05Z\n"
+        "tags: []\n"
+        "---\n"
+        "body\n"
+    )
+    parsed = split_document(text)
+    assert parsed is not None
+    fm, body = parsed
+    assert fm.source == [Source.USER, Source.LLM]
+    assert body == "body\n"
+    # Round-trip preserves the list shape verbatim.
+    assert fm.serialize() + body == text
+
+
+def test_singleton_list_serializes_as_scalar() -> None:
+    """`source=[user]` should round-trip back to scalar `source: user` —
+    we don't want to gratuitously list-shape ordinary notes that callers
+    happen to construct with a single-element list."""
+    fm = Frontmatter(
+        title="hello",
+        source=[Source.USER],
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    text = fm.serialize()
+    assert "source: user\n" in text
+    assert "source: [user]" not in text
+
+
+def test_unknown_source_in_list_falls_through_to_extra() -> None:
+    """If any list entry isn't a known `Source`, the whole line is
+    preserved verbatim in `extra` — we never silently drop information."""
+    text = (
+        "---\n"
+        "title: future\n"
+        "source: [user, unknown_value]\n"
+        "created_at: 2026-05-07T14:23:05Z\n"
+        "updated_at: 2026-05-07T14:23:05Z\n"
+        "tags: []\n"
+        "---\n"
+    )
+    # `source` is required; rejecting it makes the whole frontmatter
+    # unparseable — that's the contract for required fields.
+    assert split_document(text) is None
+
+
+def test_has_source_scalar_match() -> None:
+    fm = Frontmatter.new("hello", NOW)
+    assert has_source(fm, Source.USER)
+    assert not has_source(fm, Source.IMPORT)
+
+
+def test_has_source_list_match() -> None:
+    fm = Frontmatter.new_drafted("hello", NOW)
+    assert has_source(fm, Source.USER)
+    assert has_source(fm, Source.LLM)
+    assert not has_source(fm, Source.IMPORT)
 
 
 def test_import_note_round_trip() -> None:
