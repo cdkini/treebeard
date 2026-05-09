@@ -8,6 +8,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `README.md` is the canonical user-facing reference — feature surface, command flags, auto-behaviors, frontmatter schema, vault layout, config knobs. This file holds only what an agent modifying the code must know on top of that.
 
+## Evaluating new asks
+
+`om` is a personal CLI for one user. "Useful" means *the user will use it* — there are no hypothetical users to design for. Push back accordingly.
+
+Default to hard skeptic when an ask introduces a new command, new dependency, new abstraction, or a behavioral change to the vault / auto-commit / chat. Routine edits, bugfixes, and small tweaks skip the gauntlet.
+
+When the user asks "should we do X?" or "what about Y?", lead with a verdict in 2–3 sentences: recommendation + the main tradeoff. Don't draft a plan or write code until the user agrees.
+
+For non-trivial asks (new commands, new deps, new abstractions, behavioral changes to vault / auto-commit / chat, or anything where the right shape isn't obvious), probe thoroughly with `AskUserQuestion` *before* drafting a plan. Batch the questions in one tool call, cover the dimensions that would actually change the recommendation (usage frequency, scope, constraints, alternatives considered). Skip questions for trivial work — bugfixes, small tweaks, well-scoped edits — where you already have what you need. Use judgment; mechanical questioning on every ask is friction, not signal.
+
+A feature clears the bar if it meets one of:
+- The user will reach for it weekly, **or** it's high-leverage when used (recovery, migration, unblocking).
+- It removes friction from a workflow the user already does — not a new thing they *might* do.
+- It composes with existing primitives (vault / git / indexer / Click commands).
+
+New subsystems start with a heavy negative prior. Overcomable, but the ask must explain why existing primitives can't carry the feature — and the session must say so out loud before agreeing.
+
+Excitement is not a green light. If the user sounds committed but the ask looks shiny rather than useful, say so directly, then defer to their call.
+
+Auto mode governs *how* to implement an agreed feature, not *whether* it should exist. Don't let auto mode bulldoze evaluation.
+
 ## Commands
 
 All Python invocations go through `uv run` — never bare `python` / `pytest` / `ruff`.
