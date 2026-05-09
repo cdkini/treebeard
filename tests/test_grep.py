@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pathlib
-import shlex
 import subprocess
 from typing import Any
 
@@ -227,14 +226,18 @@ def test_rg_reload_command_shape(
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
     runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
-    cmd = capture[0]["args"][0]
+    call = capture[0]
+    cmd = call["args"][0]
     bind_flag = next((a for a in cmd if a.startswith("--bind=change:reload:")), None)
     assert bind_flag is not None
     assert "rg --column --line-number" in bind_flag
     assert "--type md" in bind_flag
     assert "{q}" in bind_flag
     assert "|| true" in bind_flag
-    assert shlex.quote(str(vault)) in bind_flag
+    # rg searches `.` so result paths are relative; fzf is launched with
+    # cwd=vault so that `.` resolves to the vault.
+    assert bind_flag.rstrip().endswith(". || true")
+    assert pathlib.Path(call["kwargs"]["cwd"]) == vault
     # Sanity: fzf must have --ansi and --disabled so rg drives the match.
     assert "--ansi" in cmd
     assert "--disabled" in cmd
@@ -277,6 +280,8 @@ def test_handles_vault_path_with_spaces(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A vault path with spaces must reach fzf as `cwd` (passed via argv,
+    not the shell), so the rg reload string need not quote it."""
     spaced = tmp_path / "a vault"
     (spaced / ".om").mkdir(parents=True)
     subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=spaced, check=True)
@@ -285,16 +290,16 @@ def test_handles_vault_path_with_spaces(
     capture: list[dict[str, Any]] = []
     _patch_fzf(monkeypatch, stdout="", returncode=130, capture=capture)
     runner.invoke(cli, ["grep", "--config-dir", str(cfg_dir)])
+    call = capture[0]
+    assert pathlib.Path(call["kwargs"]["cwd"]) == spaced
     bind_flag = next(
-        (a for a in capture[0]["args"][0] if a.startswith("--bind=change:reload:")),
+        (a for a in call["args"][0] if a.startswith("--bind=change:reload:")),
         None,
     )
     assert bind_flag is not None
-    # shlex.quote wraps a path with spaces in single quotes — the test
-    # asserts on that exact form so future regressions in our quoting
-    # show up as test failures instead of mysterious shell errors.
-    assert shlex.quote(str(spaced)) in bind_flag
-    assert "'" in bind_flag
+    # The vault path must NOT appear in the shell command — fzf's cwd
+    # carries it, and rg searches `.`.
+    assert str(spaced) not in bind_flag
 
 
 def test_missing_target_file_errors(

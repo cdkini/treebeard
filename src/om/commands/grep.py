@@ -9,7 +9,6 @@ selected match in the editor at the matched line; Esc cancels silently.
 from __future__ import annotations
 
 import pathlib
-import shlex
 import subprocess
 
 import click
@@ -32,18 +31,20 @@ def _preview_cmd() -> str:
     return "cat {1}"
 
 
-def _rg_reload_cmd(vault: pathlib.Path) -> str:
+def _rg_reload_cmd() -> str:
     """The shell command fzf runs on every keystroke.
 
     `{q}` is fzf's already-shell-quoted query placeholder — do not wrap
     it again. `|| true` swallows rg's exit-1 (no matches) so fzf doesn't
     flash a transient error; rg exit-2 (real error) is rare and would
     just leave an empty list, same as no-match.
+
+    rg searches `.` so paths in results are relative to fzf's cwd (the
+    vault), keeping the picker and preview header readable.
     """
-    quoted_vault = shlex.quote(str(vault))
     return (
         "rg --column --line-number --no-heading --color=always "
-        f"--smart-case --type md -- {{q}} {quoted_vault} || true"
+        "--smart-case --type md -- {q} . || true"
     )
 
 
@@ -56,7 +57,7 @@ def _run_fzf(vault: pathlib.Path) -> str:
         "--disabled",
         "--delimiter=:",
         "--with-nth=1,4..",
-        f"--bind=change:reload:{_rg_reload_cmd(vault)}",
+        f"--bind=change:reload:{_rg_reload_cmd()}",
         f"--preview={_preview_cmd()}",
         "--preview-window=right:60%:+{2}-/2",
     ]
@@ -66,6 +67,7 @@ def _run_fzf(vault: pathlib.Path) -> str:
         text=True,
         capture_output=True,
         check=False,
+        cwd=vault,
     )
     if proc.returncode == fzf.CANCELLED_RETURNCODE:
         return ""
