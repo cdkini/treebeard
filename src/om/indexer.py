@@ -75,7 +75,7 @@ def build_indexes(vault: pathlib.Path, *, now: datetime) -> IndexStats:
     report it.
     """
     stats = IndexStats()
-    corpus = _scan_vault(vault)
+    corpus, existing_indexes = _scan_vault(vault)
     tag_to_entries = _group_by_tag(corpus)
 
     eligible_tags: set[str] = set()
@@ -95,26 +95,36 @@ def build_indexes(vault: pathlib.Path, *, now: datetime) -> IndexStats:
         else:
             stats.skipped += 1
 
-    stale = _find_stale(vault, eligible_tags)
+    stale = [path for path, fm in existing_indexes if fm.title not in eligible_tags]
     if stale:
         archiver.archive_paths(vault, stale, now=now)
         stats.archived = stale
     return stats
 
 
-def _scan_vault(vault: pathlib.Path) -> list[tuple[pathlib.Path, Frontmatter]]:
-    """Return (path, frontmatter) for every parseable root note that isn't
-    itself an index note."""
-    out: list[tuple[pathlib.Path, Frontmatter]] = []
+def _scan_vault(
+    vault: pathlib.Path,
+) -> tuple[
+    list[tuple[pathlib.Path, Frontmatter]],
+    list[tuple[pathlib.Path, Frontmatter]],
+]:
+    """Single walk of the vault root. Returns (corpus, existing_indexes):
+    corpus is parseable non-index notes (used to compute tag eligibility);
+    existing_indexes is pre-existing index notes (used to detect stale
+    ones whose tag fell below `THRESHOLD`).
+    """
+    corpus: list[tuple[pathlib.Path, Frontmatter]] = []
+    existing_indexes: list[tuple[pathlib.Path, Frontmatter]] = []
     for path in sorted(vault.glob("*.md")):
         parsed = split_document(path.read_text(encoding="utf-8"))
         if parsed is None:
             continue
         fm, _ = parsed
-        if INDEX_TAG in fm.tags:
-            continue
-        out.append((path, fm))
-    return out
+        if fm.tags == [INDEX_TAG]:
+            existing_indexes.append((path, fm))
+        elif INDEX_TAG not in fm.tags:
+            corpus.append((path, fm))
+    return corpus, existing_indexes
 
 
 def _group_by_tag(
@@ -190,18 +200,3 @@ def _upsert_index(
     new_fm.tags = [INDEX_TAG]
     path.write_text(new_fm.serialize() + desired_body, encoding="utf-8")
     return "wrote", None
-
-
-def _find_stale(vault: pathlib.Path, eligible_tags: set[str]) -> list[pathlib.Path]:
-    """Existing index notes whose tag (= title) is no longer eligible."""
-    stale: list[pathlib.Path] = []
-    for path in sorted(vault.glob("*.md")):
-        parsed = split_document(path.read_text(encoding="utf-8"))
-        if parsed is None:
-            continue
-        fm, _ = parsed
-        if fm.tags != [INDEX_TAG]:
-            continue
-        if fm.title not in eligible_tags:
-            stale.append(path)
-    return stale
