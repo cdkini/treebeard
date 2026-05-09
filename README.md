@@ -113,10 +113,12 @@ note (`<vault>/web-<date>-<slug>.md`).
 
 ### Find
 
-**`om open [--limit N]`** — interactive fzf picker over every note in the
-vault, sorted by mtime. Enter opens the highlight; **Ctrl-N** creates a
-new note named after whatever you've typed (or a fresh scratch if the
-query is empty). `--limit N` caps to the N most recently edited.
+**`om open [QUERY...] [--limit N]`** — fuzzy-pick a note from the vault.
+With no QUERY, opens an interactive fzf picker (Enter opens the highlight;
+**Ctrl-N** creates a new note named after whatever you've typed, or a fresh
+scratch if empty). With QUERY, fuzzy-matches against vault filenames and
+opens the top match (errors if nothing matches). `--limit N` caps the
+candidate pool to the N most recently edited notes in either mode.
 
 **`om grep`** — ripgrep through fzf. Each keystroke re-runs `rg` over the
 vault. Enter opens the matched note at the matched line.

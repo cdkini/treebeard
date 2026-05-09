@@ -274,6 +274,119 @@ def test_open_with_limit(
     assert len(fzf_input.strip().split("\n")) == 5
 
 
+def test_query_opens_top_match(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """`om open foo` runs fzf in --filter mode and opens the top stem match."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    target = _seed_note(vault, "foo.md", "foo")
+    _seed_note(vault, "bar.md", "bar")
+    _patch_fzf_present(monkeypatch)
+    # `--filter` prints the matched stem on stdout, best-first.
+    _patch_fzf(monkeypatch, stdout=f"{target.stem}\nbar\n")
+
+    result = runner.invoke(cli, ["open", "foo", "--config-dir", str(cfg_dir)])
+    assert result.exit_code == 0, result.output
+    assert str(target) in result.output
+
+
+def test_query_no_match_errors(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    _seed_note(vault, "foo.md", "foo")
+    _patch_fzf_present(monkeypatch)
+    # fzf exits 1 when nothing matches.
+    _patch_fzf(monkeypatch, stdout="", returncode=1)
+
+    result = runner.invoke(cli, ["open", "zzz", "--config-dir", str(cfg_dir)])
+    assert result.exit_code != 0
+    assert "no note matches 'zzz'" in result.output
+    assert "om open" in result.output  # hint points at interactive picker
+
+
+def test_query_with_limit_respects_pool(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """`--limit N` caps the candidate pool that the query filters within."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    for i in range(5):
+        _seed_note(vault, f"n{i}.md", f"n{i}")
+    _patch_fzf_present(monkeypatch)
+    capture: list[dict[str, Any]] = []
+    # fzf will be handed only 2 stems; the canned stdout names one of them.
+    _patch_fzf(monkeypatch, stdout="n4\n", capture=capture)
+
+    result = runner.invoke(cli, ["open", "n", "--limit", "2", "--config-dir", str(cfg_dir)])
+    assert result.exit_code == 0, result.output
+    fzf_input = capture[0]["kwargs"]["input"]
+    assert len(fzf_input.strip().split("\n")) == 2
+
+
+def test_query_uses_filter_mode(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """Query path uses non-interactive flags only — no preview, no expect."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    _seed_note(vault, "foo.md", "foo")
+    _patch_fzf_present(monkeypatch)
+    capture: list[dict[str, Any]] = []
+    _patch_fzf(monkeypatch, stdout="foo\n", capture=capture)
+
+    runner.invoke(cli, ["open", "foo", "--config-dir", str(cfg_dir)])
+    argv = capture[0]["args"][0]
+    assert any(a.startswith("--filter=") for a in argv)
+    assert not any(a.startswith("--preview=") for a in argv)
+    assert "--expect=ctrl-n" not in argv
+    assert "--print-query" not in argv
+
+
+def test_query_with_spaces(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_editor: list[EditorFake],
+    freeze_now: list,
+) -> None:
+    """`om open foo bar` (no quotes) joins to a single fzf query."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    target = _seed_note(vault, "foo-bar.md", "foo bar")
+    _patch_fzf_present(monkeypatch)
+    capture: list[dict[str, Any]] = []
+    _patch_fzf(monkeypatch, stdout=f"{target.stem}\n", capture=capture)
+
+    result = runner.invoke(cli, ["open", "foo", "bar", "--config-dir", str(cfg_dir)])
+    assert result.exit_code == 0, result.output
+    argv = capture[0]["args"][0]
+    assert "--filter=foo bar" in argv
+
+
 def test_preview_falls_back_to_cat(
     runner: CliRunner,
     cfg_dir: pathlib.Path,

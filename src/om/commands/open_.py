@@ -1,9 +1,11 @@
-"""`om open` — interactive picker over the vault.
+"""`om open` — picker (or non-interactive top-match) over the vault.
 
-Lists notes via fzf with a full-file preview pane. Enter opens the
-selected note; Ctrl-N creates a new note named after the typed query
-(or a fresh scratch if the query is empty). Pass `--limit N` to cap
-the list to the N most recently edited notes.
+With no QUERY, lists notes via fzf with a full-file preview pane. Enter
+opens the selected note; Ctrl-N creates a new note named after the typed
+query (or a fresh scratch if the query is empty). With QUERY, fuzzy-matches
+against vault filename stems via `fzf --filter` and opens the top match,
+erroring if nothing matches. Pass `--limit N` to cap the candidate pool
+to the N most recently edited notes in either mode.
 """
 
 from __future__ import annotations
@@ -65,7 +67,30 @@ def _run_fzf(lines: list[str], previewer: str) -> tuple[str, str, str]:
     return (query, key, selection)
 
 
-def run(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> None:
+def _run_fzf_filter(query: str, lines: list[str]) -> str | None:
+    """Run `fzf --filter` non-interactively. Returns the top-scoring line or
+    None if nothing matched. Raises OmError on subprocess error.
+
+    fzf prints matches best-first, exits 1 when nothing matches, and exits
+    >1 on a real error (bad flag, etc.) — we surface those so a future fzf
+    quirk can't masquerade as a no-match.
+    """
+    cmd = ["fzf", f"--filter={query}"]
+    proc = subprocess.run(
+        cmd,
+        input="\n".join(lines),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode == 1 or not proc.stdout.strip():
+        return None
+    if proc.returncode != 0:
+        raise OmError(f"fzf failed: {proc.stderr.strip() or proc.returncode}")
+    return proc.stdout.split("\n", 1)[0]
+
+
+def run_interactive(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> None:
     """Run the picker against `vault`."""
     paths = list_recent_notes(vault, limit)
     if not paths:
@@ -107,7 +132,28 @@ def run(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> 
     reopen(target_path, editor)
 
 
+def run_query(vault: pathlib.Path, editor: str, query: str, limit: int | None) -> None:
+    """Open the top fuzzy-match for `query` against vault filename stems."""
+    paths = list_recent_notes(vault, limit)
+    if not paths:
+        raise OmError("vault is empty", hint="create a note with `om note <name>`")
+    # Flat vault → stem is unique. Match against stems only so the query
+    # isn't fighting directory prefixes or title text.
+    by_stem = {p.stem: p for p in paths}
+    top_stem = _run_fzf_filter(query, list(by_stem.keys()))
+    if top_stem is None:
+        raise OmError(
+            f"no note matches {query!r}",
+            hint="try `om open` for the interactive picker",
+        )
+    target_path = by_stem[top_stem]
+    if not target_path.exists():
+        raise OmError(f"matched file no longer exists: {target_path}")
+    reopen(target_path, editor)
+
+
 @click.command("open")
+@click.argument("query", nargs=-1)
 @click.option(
     "--limit",
     "limit",
@@ -123,8 +169,20 @@ def run(vault: pathlib.Path, editor: str, previewer: str, limit: int | None) -> 
     help=f"Directory holding {CONFIG_FILENAME} (default: {DEFAULT_CONFIG_DIR}).",
 )
 @click.pass_context
-def command(ctx: click.Context, limit: int | None, config_dir: str | None) -> None:
-    """Fuzzy-pick a note across the whole vault and open it."""
+def command(
+    ctx: click.Context,
+    query: tuple[str, ...],
+    limit: int | None,
+    config_dir: str | None,
+) -> None:
+    """Fuzzy-pick a note across the whole vault and open it.
+
+    With no QUERY, opens an interactive picker. With QUERY, opens the top
+    fuzzy match against vault filename stems (errors if none match).
+    """
     ctx.ensure_object(dict)["config_dir"] = config_dir
     cfg = load_config(config_dir)
-    run(cfg.vault, cfg.editor, cfg.previewer, limit)
+    if query:
+        run_query(cfg.vault, cfg.editor, " ".join(query), limit)
+    else:
+        run_interactive(cfg.vault, cfg.editor, cfg.previewer, limit)
