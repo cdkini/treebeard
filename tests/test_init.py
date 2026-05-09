@@ -42,11 +42,11 @@ def test_happy_path(runner: CliRunner, tmp_path: pathlib.Path) -> None:
     # registry (`nvim`, `bat`); `_stable_dependency_defaults` pins
     # `shutil.which` to make both look installed.
     assert data == {
-        "vault": str(vault),
-        "editor": "nvim",
-        "previewer": "bat",
-        "chat_model": "sonnet",
-        "sync_warn_threshold": 10,
+        "vault": {"path": str(vault)},
+        "editor": {"command": "nvim", "previewer": "bat"},
+        "chat": {"model": "sonnet"},
+        "sync": {"warn_threshold": 10},
+        "secrets": {"granola_api_key": ""},
     }
 
 
@@ -70,8 +70,10 @@ def test_falls_back_to_constants_when_nothing_installed(
 
     assert result.exit_code == 0, result.output
     data = _read_toml(cfg_dir / "config.toml")
-    assert data["editor"] == "vim"
-    assert data["previewer"] == "bat"
+    editor_section = data["editor"]
+    assert isinstance(editor_section, dict)
+    assert editor_section["command"] == "vim"
+    assert editor_section["previewer"] == "bat"
 
 
 def test_creates_missing_parents(runner: CliRunner, tmp_path: pathlib.Path) -> None:
@@ -150,7 +152,8 @@ def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: pathl
     cfg_dir = tmp_path / "cfg"
     cfg_dir.mkdir()
     cfg_path = cfg_dir / "config.toml"
-    cfg_path.write_text('vault = "/some/old/place"\neditor = "vim"\n', encoding="utf-8")
+    legacy = '[vault]\npath = "/some/old/place"\n\n[editor]\ncommand = "vim"\n'
+    cfg_path.write_text(legacy, encoding="utf-8")
 
     vault = tmp_path / "vault"
     result = runner.invoke(cli, ["init", str(vault), "--config-dir", str(cfg_dir)])
@@ -158,7 +161,7 @@ def test_refuses_to_overwrite_existing_config(runner: CliRunner, tmp_path: pathl
     assert result.exit_code != 0
     assert "already configured" in result.output
     assert not vault.exists()
-    assert cfg_path.read_text() == 'vault = "/some/old/place"\neditor = "vim"\n'
+    assert cfg_path.read_text() == legacy
 
 
 def test_tilde_expansion_uses_home_env(
@@ -174,7 +177,9 @@ def test_tilde_expansion_uses_home_env(
     assert result.exit_code == 0, result.output
     assert (fake_home / "vault" / ".om").is_dir()
     data = _read_toml(cfg_dir / "config.toml")
-    assert data["vault"] == str(fake_home / "vault")
+    vault_section = data["vault"]
+    assert isinstance(vault_section, dict)
+    assert vault_section["path"] == str(fake_home / "vault")
 
 
 def test_relative_path_is_stored_absolute(
@@ -189,7 +194,9 @@ def test_relative_path_is_stored_absolute(
 
     assert result.exit_code == 0, result.output
     data = _read_toml(cfg_dir / "config.toml")
-    stored = data["vault"]
+    vault_section = data["vault"]
+    assert isinstance(vault_section, dict)
+    stored = vault_section["path"]
     assert isinstance(stored, str)
     assert pathlib.Path(stored).is_absolute()
     assert pathlib.Path(stored) == (tmp_path / "vault").resolve()
