@@ -93,7 +93,7 @@ def test_check_editor_unknown_missing(monkeypatch: pytest.MonkeyPatch) -> None:
         deps.check_editor("code")
     assert "code" in str(exc.value)
     assert exc.value.hint is not None
-    assert "tb config" in exc.value.hint
+    assert "config.toml" in exc.value.hint
 
 
 def test_check_editor_unknown_present(monkeypatch: pytest.MonkeyPatch) -> None:

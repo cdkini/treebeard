@@ -93,5 +93,5 @@ def check_editor(name: str) -> None:
     if shutil.which(name) is None:
         raise TreebeardError(
             f"editor `{name}` not found on PATH",
-            hint="install it, or change `editor` in your tb config",
+            hint="install it, or change `editor` in ~/.treebeard/config.toml",
         )

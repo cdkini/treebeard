@@ -67,8 +67,8 @@ tb sync                # pull --rebase + push
 
 `tb init <path>` is non-interactive: the path is the only required input.
 Everything else (editor, previewer, chat model, sync threshold) gets a
-sensible default written into `~/.treebeard/config.toml`; edit it later with
-`tb config`.
+sensible default written into `~/.treebeard/config.toml`; edit that file
+directly to change them later.
 
 What `tb init` does, depending on what's at `<path>`:
 
@@ -140,9 +140,6 @@ root.
 **`tb sync`** — `git pull --rebase && git push` against the vault's
 configured remote. Errors with a hint if no remote is set; add one with
 `git remote add origin <url>` inside the vault.
-
-**`tb config`** — open `~/.treebeard/config.toml` in your configured
-editor.
 
 ### Chat
 
@@ -305,8 +302,6 @@ granola_api_key = ""  # optional
 - `[sync] warn_threshold` — positive integer; trigger threshold for the
   unsynced-commits warning. Default 10.
 - `[secrets] granola_api_key` — only consulted by `tb import granola`.
-
-Open the file with `tb config`.
 
 ## Frontmatter schema
 

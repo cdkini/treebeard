@@ -2,10 +2,10 @@
 
 Non-interactive: the path is the only required input. Editor, previewer,
 chat model, and sync-warn threshold all fall back to sane defaults; the
-user can edit `~/.treebeard/config.toml` later (via `tb config`) to change
-them. Git identity is inherited from the user's global git config; if
-the user wants a remote, they add one with `git remote add origin <url>`
-inside the vault.
+user can edit `~/.treebeard/config.toml` later to change them. Git
+identity is inherited from the user's global git config; if the user
+wants a remote, they add one with `git remote add origin <url>` inside
+the vault.
 """
 
 from __future__ import annotations
@@ -54,6 +54,7 @@ def command(path: str) -> None:
         config_path = config.save()
         ui.success(f"Adopted existing vault at {vault_path}")
         ui.success(f"Wrote config to {config_path}")
+        ui.info(f"Edit {config_path} to tweak editor, chat model, or other settings.")
         return
 
     vault_path.mkdir(parents=True, exist_ok=True)
@@ -72,6 +73,7 @@ def command(path: str) -> None:
     ui.success(f"Initialized vault at {vault_path}")
     ui.success(f"Scaffolded {claude_md_path}")
     ui.success(f"Wrote config to {config_path}")
+    ui.info(f"Edit {config_path} to tweak editor, chat model, or other settings.")
 
 
 def _validate_vault_path(raw: str) -> str | None:
