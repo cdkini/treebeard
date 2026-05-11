@@ -140,15 +140,15 @@ def _group_by_tag(
 
 
 def _build_body(entries: list[tuple[str, str]]) -> str:
-    """Alphabetical (case-insensitive by display title), de-duplicated
-    wikilink list, preceded by a blank line so the body breathes after
-    the frontmatter.
+    """Alphabetical (case-insensitive by display title, stem as tie-break),
+    de-duplicated wikilink list, preceded by a blank line so the body
+    breathes after the frontmatter.
 
     Emits `[[stem|title]]` so links resolve to the on-disk filename. When
     `slugify(title) == stem` the alias is redundant (the title already
     renders cleanly as the link text), so we drop it for a tidier index.
     """
-    unique = sorted(set(entries), key=lambda entry: entry[1].lower())
+    unique = sorted(set(entries), key=lambda entry: (entry[1].lower(), entry[0]))
     lines: list[str] = []
     for stem, title in unique:
         try:

@@ -93,6 +93,26 @@ def test_idempotent_second_run(vault: pathlib.Path) -> None:
     assert (vault / "foo.md").stat().st_mtime_ns == mtime_after_first
 
 
+def test_duplicate_titles_sorted_by_stem(vault: pathlib.Path) -> None:
+    """Two notes with the same title are tie-broken by stem so the order
+    is deterministic across runs."""
+    seed_note(vault, "granola-2026-05-11-data-infra-standup", "Data Infra Standup", ["foo"])
+    seed_note(vault, "granola-2026-05-07-data-infra-standup", "Data Infra Standup", ["foo"])
+    seed_note(vault, "z", "Zeta", ["foo"])
+
+    stats = build_indexes(vault, now=NOW)
+
+    assert stats.wrote == 1
+    text = (vault / "foo.md").read_text(encoding="utf-8")
+    body_start = text.index("---\n", 4) + len("---\n")
+    assert text[body_start:] == (
+        "\n"
+        "- [[granola-2026-05-07-data-infra-standup|Data Infra Standup]]\n"
+        "- [[granola-2026-05-11-data-infra-standup|Data Infra Standup]]\n"
+        "- [[z|Zeta]]\n"
+    )
+
+
 def test_add_note_updates_index(vault: pathlib.Path) -> None:
     """After adding a 4th note, the index updates: created_at preserved,
     updated_at advanced, body includes the new entry alphabetically."""
