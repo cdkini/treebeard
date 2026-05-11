@@ -113,8 +113,8 @@ lands at `<vault>/granola-<date>-<slug>.md` with `source: import` and
 `tags: [granola]`. Requires `granola_api_key` under `[secrets]` in
 `config.toml`.
 
-**`tb import web <url>`** — fetch a web page and import it as a markdown
-note (`<vault>/web-<date>-<slug>.md`).
+**`tb import web <url> [<url> ...]`** — fetch one or more web pages and
+import each as a markdown note (`<vault>/web-<date>-<slug>.md`).
 
 ### Find
 

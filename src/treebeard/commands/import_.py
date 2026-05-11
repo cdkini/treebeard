@@ -63,14 +63,14 @@ def granola(since: datetime | None) -> None:
 
 
 @command.command("web")
-@click.argument("url")
-def web(url: str) -> None:
-    """Import a web page as a markdown note."""
+@click.argument("urls", nargs=-1, required=True, metavar="URL [URL ...]")
+def web(urls: tuple[str, ...]) -> None:
+    """Import one or more web pages as markdown notes."""
     from treebeard.importers.sync import sync
     from treebeard.importers.web import WebImporter
 
     cfg = load_config()
     now = _now_utc()
-    importer = WebImporter(url=url, now=now)
+    importer = WebImporter(urls=urls, now=now)
     stats = sync(cfg.vault, importer, since=now, now=now)
     click.echo(stats.summary())

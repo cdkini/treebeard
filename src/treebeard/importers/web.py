@@ -1,11 +1,12 @@
-"""Web-page importer — fetch a URL, extract its main content, land it as
-a markdown note.
+"""Web-page importer — fetch one or more URLs, extract main content, land
+each as a markdown note.
 
 Implements the `Importer` Protocol with a single-shot shape: the user
-supplies one URL on the CLI; `list_summaries` returns one synthetic
-`NoteSummary`, and `fetch_one` does the actual HTTP GET + extraction.
-The shared `sync()` driver still owns vault layout, slug collisions,
-and idempotency by `import_id`.
+supplies one or more URLs on the CLI; `list_summaries` returns one
+synthetic `NoteSummary` per URL, and `fetch_one` does the actual HTTP
+GET + extraction for the URL matching the summary's `import_id`. The
+shared `sync()` driver still owns vault layout, slug collisions, and
+idempotency by `import_id`.
 
 `updated_at` is set to "now" on every run so the driver naturally takes
 the overwrite branch when the note already exists — re-running
@@ -15,6 +16,7 @@ preserved by the driver across overwrites.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
 
@@ -37,12 +39,19 @@ class WebImporter:
 
     def __init__(
         self,
-        url: str,
+        urls: Iterable[str],
         *,
         now: datetime,
         client: httpx.Client | None = None,
     ) -> None:
-        self._canonical_url = _canonicalize(url)
+        # De-dupe after canonicalization while preserving order — typing
+        # the same URL twice (or trivial variants) should land one note.
+        seen: dict[str, None] = {}
+        for raw in urls:
+            seen.setdefault(_canonicalize(raw), None)
+        if not seen:
+            raise TreebeardError("at least one URL is required")
+        self._canonical_urls = tuple(seen)
         self._now = now
         if client is None:
             client = httpx.Client(
@@ -53,7 +62,7 @@ class WebImporter:
         self._client = client
 
     def list_summaries(self, *, since: datetime) -> list[NoteSummary]:
-        """Return a single summary for the user-supplied URL.
+        """Return one summary per user-supplied URL.
 
         `since` is part of the protocol but irrelevant here — a one-shot
         URL import has nothing to filter against. We set `updated_at` to
@@ -63,21 +72,22 @@ class WebImporter:
         del since
         return [
             NoteSummary(
-                import_id=self._canonical_url,
-                display_title=self._canonical_url,
+                import_id=url,
+                display_title=url,
                 updated_at=self._now,
             )
+            for url in self._canonical_urls
         ]
 
     def fetch_one(self, summary: NoteSummary) -> ImportedNote:
-        del summary
+        url = summary.import_id
         try:
-            response = self._client.get(self._canonical_url)
+            response = self._client.get(url)
         except httpx.HTTPError as exc:
-            raise TreebeardError(f"failed to fetch {self._canonical_url}: {exc}") from exc
+            raise TreebeardError(f"failed to fetch {url}: {exc}") from exc
         if response.status_code >= 400:
             raise TreebeardError(
-                f"HTTP {response.status_code} fetching {self._canonical_url}: {response.text[:200]}"
+                f"HTTP {response.status_code} fetching {url}: {response.text[:200]}"
             )
 
         ctype = response.headers.get("content-type", "")
@@ -101,11 +111,11 @@ class WebImporter:
                 hint="page may be JS-rendered or have no main content",
             )
 
-        title = _resolve_title(html, self._canonical_url)
+        title = _resolve_title(html, url)
         final_url = _canonicalize(str(response.url))
 
         return ImportedNote(
-            import_id=self._canonical_url,
+            import_id=url,
             import_url=final_url,
             title=title,
             created_at=self._now,

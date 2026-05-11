@@ -71,12 +71,12 @@ def install_fake_importer(
     code path stays real — only the wire is faked."""
     transport = httpx.MockTransport(handler)
 
-    def factory(*, url: str, now: datetime = now) -> WebImporter:
+    def factory(*, urls: tuple[str, ...], now: datetime = now) -> WebImporter:
         client = httpx.Client(
             follow_redirects=True,
             transport=transport,
         )
-        return WebImporter(url=url, now=now, client=client)
+        return WebImporter(urls=urls, now=now, client=client)
 
     # `WebImporter` is now imported lazily inside the `web` subcommand to
     # keep `tb` startup snappy, so we patch the source module instead of a
@@ -96,7 +96,7 @@ def html_response(body: str = ARTICLE_HTML, *, status: int = 200) -> httpx.Respo
 def test_help(runner: CliRunner) -> None:
     result = runner.invoke(cli, ["import", "web", "--help"])
     assert result.exit_code == 0, result.output
-    assert "Import a web page" in result.output
+    assert "Import one or more web pages" in result.output
 
 
 def test_first_import_writes_note(
@@ -129,6 +129,66 @@ def test_first_import_writes_note(
     assert "created_at: 2026-05-09T12:00:00Z" in text
     assert "updated_at: 2026-05-09T12:00:00Z" in text
     assert "lightweight markup language" in text
+
+
+def test_multiple_urls_each_written(
+    runner: CliRunner,
+    vault: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_default_config(vault)
+    now = datetime(2026, 5, 9, 12, 0, 0, tzinfo=UTC)
+
+    bodies = {
+        "/a": ARTICLE_HTML,
+        "/b": ARTICLE_HTML.replace("Markdown", "Restructured Text").replace(
+            "John Gruber and Aaron Swartz", "David Goodger"
+        ),
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return html_response(bodies[request.url.path])
+
+    install_fake_importer(monkeypatch, handler, now=now)
+
+    result = runner.invoke(
+        cli,
+        ["import", "web", "https://example.com/a", "https://example.com/b"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "wrote 2, updated 0, unchanged 0, skipped 0" in result.output
+    assert list(vault.glob("web-2026-05-09-*.md"))
+    assert len(list(vault.glob("web-2026-05-09-*.md"))) == 2
+
+
+def test_duplicate_urls_collapse(
+    runner: CliRunner,
+    vault: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Passing the same URL (or canonical variants) twice writes one note."""
+    seed_default_config(vault)
+    now = datetime(2026, 5, 9, 12, 0, 0, tzinfo=UTC)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return html_response()
+
+    install_fake_importer(monkeypatch, handler, now=now)
+
+    result = runner.invoke(
+        cli,
+        [
+            "import",
+            "web",
+            "https://example.com/article",
+            "https://Example.com/article/#frag",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "wrote 1, updated 0, unchanged 0, skipped 0" in result.output
 
 
 def test_rerun_overwrites_body(
