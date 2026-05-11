@@ -18,30 +18,6 @@ def ensure_initialized(vault: pathlib.Path) -> None:
     subprocess.run(["git", "init", "--quiet"], cwd=vault, check=True)
 
 
-def get_config(vault: pathlib.Path, key: str) -> str | None:
-    """Return the value of a git config `key` (repo-then-global), or None."""
-    result = subprocess.run(
-        ["git", "config", "--get", key],
-        cwd=vault,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return None
-    value = result.stdout.strip()
-    return value or None
-
-
-def set_config(vault: pathlib.Path, key: str, value: str) -> None:
-    """Write `key = value` into the repo's `.git/config`."""
-    subprocess.run(["git", "config", key, value], cwd=vault, check=True)
-
-
-def add_remote(vault: pathlib.Path, name: str, url: str) -> None:
-    """`git remote add <name> <url>`."""
-    subprocess.run(["git", "remote", "add", name, url], cwd=vault, check=True)
-
-
 def has_changes(vault: pathlib.Path) -> bool:
     """True if the working tree or index has anything uncommitted."""
     out = subprocess.run(
@@ -114,18 +90,6 @@ def commit_all(vault: pathlib.Path, message: str) -> None:
     subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
     subprocess.run(
         ["git", "commit", "--quiet", "-m", message],
-        cwd=vault,
-        check=True,
-    )
-
-
-def commit_all_allow_empty(vault: pathlib.Path, message: str) -> None:
-    """Like `commit_all`, but creates the commit even when nothing is
-    staged. Used by `tb init` to guarantee a fresh vault has a HEAD even
-    if the user hasn't created any notes yet."""
-    subprocess.run(["git", "add", "-A"], cwd=vault, check=True)
-    subprocess.run(
-        ["git", "commit", "--quiet", "--allow-empty", "-m", message],
         cwd=vault,
         check=True,
     )

@@ -51,22 +51,6 @@ class Frontmatter:
         ts = now if now is not None else datetime.now(UTC)
         return cls(title=title, source=Source.USER, created_at=ts, updated_at=ts)
 
-    @classmethod
-    def new_drafted(cls, title: str, now: datetime | None = None) -> Frontmatter:
-        """Frontmatter for an LLM-drafted note: `source: [user, llm]`.
-
-        User comes first by convention — it encodes that the user drove
-        the intent (initiated the chat, typed `/draft`) and the LLM
-        shaped the prose. Used by the chat REPL's `/draft` handler.
-        """
-        ts = now if now is not None else datetime.now(UTC)
-        return cls(
-            title=title,
-            source=[Source.USER, Source.LLM],
-            created_at=ts,
-            updated_at=ts,
-        )
-
     def serialize(self) -> str:
         """Render as a `---…---\\n` block."""
         lines: list[str] = ["---"]

@@ -481,8 +481,6 @@ class TurnRenderer:
         # Pre-content spinner Live (transient). Holds the line while we
         # wait for the model to produce anything.
         self._outer_live: Live | None = None
-        self._outer_state = SpinnerState.AWAIT
-        self._outer_tool_name: str | None = None
 
         self._finalized = False
 
@@ -661,9 +659,6 @@ class TurnRenderer:
         self._blocks.append(group)
         return group
 
-    def _has_any_tools(self) -> bool:
-        return any(isinstance(b, _ToolGroup) for b in self._blocks)
-
     def _all_text(self) -> str:
         return "".join(seg.text for seg in self._blocks if isinstance(seg, _TextSegment))
 
@@ -835,8 +830,6 @@ class TurnRenderer:
     # -- outer spinner -----------------------------------------------------
 
     def _set_outer_spinner(self, state: SpinnerState, tool_name: str | None) -> None:
-        self._outer_state = state
-        self._outer_tool_name = tool_name
         if self.plain:
             return
         # Don't open the outer spinner if the gutter has already opened —

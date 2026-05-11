@@ -121,16 +121,6 @@ def test_ensure_initialized_creates_repo(tmp_path: pathlib.Path) -> None:
     assert (fresh / ".git").is_dir()
 
 
-def test_get_config_missing_returns_none(vault: pathlib.Path) -> None:
-    """Unset key → None, not empty string or raise."""
-    assert git.get_config(vault, "treebeard.nonexistent.key") is None
-
-
-def test_set_and_get_config_roundtrip(vault: pathlib.Path) -> None:
-    git.set_config(vault, "treebeard.test.value", "hello")
-    assert git.get_config(vault, "treebeard.test.value") == "hello"
-
-
 def test_has_changes_clean_then_dirty(vault: pathlib.Path) -> None:
     assert not git.has_changes(vault)
     (vault / "foo.md").write_text("hi\n", encoding="utf-8")
@@ -148,16 +138,9 @@ def test_has_head_after_commit(vault: pathlib.Path) -> None:
     assert git.has_head(vault)
 
 
-def test_commit_all_allow_empty_creates_commit(vault: pathlib.Path) -> None:
-    """`tb init` calls this to seed a HEAD even if the user has no notes."""
-    assert not git.has_head(vault)
-    git.commit_all_allow_empty(vault, "init")
-    assert git.has_head(vault)
-
-
 def test_has_remote_empty_then_added(vault: pathlib.Path) -> None:
     assert not git.has_remote(vault)
-    git.add_remote(vault, "origin", "https://example.com/repo.git")
+    _git(vault, "remote", "add", "origin", "https://example.com/repo.git")
     assert git.has_remote(vault)
 
 

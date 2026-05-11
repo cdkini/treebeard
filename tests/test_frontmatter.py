@@ -111,16 +111,13 @@ def test_user_note_omits_import_fields() -> None:
     assert "import_url" not in text
 
 
-def test_new_drafted_creates_user_llm_source() -> None:
-    """`/draft` notes get `source: [user, llm]`, user always first."""
-    fm = Frontmatter.new_drafted("hello", NOW)
-    assert fm.source == [Source.USER, Source.LLM]
-    assert fm.created_at == NOW
-    assert fm.updated_at == NOW
-
-
 def test_list_source_serializes_inline() -> None:
-    fm = Frontmatter.new_drafted("hello", NOW)
+    fm = Frontmatter(
+        title="hello",
+        source=[Source.USER, Source.LLM],
+        created_at=NOW,
+        updated_at=NOW,
+    )
     text = fm.serialize()
     assert "source: [user, llm]" in text
 
@@ -184,7 +181,12 @@ def test_has_source_scalar_match() -> None:
 
 
 def test_has_source_list_match() -> None:
-    fm = Frontmatter.new_drafted("hello", NOW)
+    fm = Frontmatter(
+        title="hello",
+        source=[Source.USER, Source.LLM],
+        created_at=NOW,
+        updated_at=NOW,
+    )
     assert has_source(fm, Source.USER)
     assert has_source(fm, Source.LLM)
     assert not has_source(fm, Source.IMPORT)
