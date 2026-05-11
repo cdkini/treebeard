@@ -154,7 +154,7 @@ def run_query(vault: pathlib.Path, editor: str, query: str, limit: int | None) -
     help="Cap the list to the N most recently edited notes (default: no cap).",
 )
 def command(query: tuple[str, ...], limit: int | None) -> None:
-    """Fuzzy-pick a note across the whole vault and open it.
+    """Fuzzy-pick a note and open it.
 
     With no QUERY, opens an interactive picker. With QUERY, opens the top
     fuzzy match against vault filename stems (errors if none match).

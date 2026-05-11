@@ -97,6 +97,6 @@ def run(vault: pathlib.Path, editor: str) -> None:
 
 @click.command("grep")
 def command() -> None:
-    """Fuzzy-search note contents (ripgrep piped through fzf)."""
+    """Fuzzy-search note contents."""
     cfg = load_config()
     run(cfg.vault, cfg.editor)

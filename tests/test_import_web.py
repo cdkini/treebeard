@@ -14,6 +14,7 @@ from click.testing import CliRunner
 from treebeard.cli import cli
 from treebeard.commands import import_ as import_cmd
 from treebeard.config import Config
+from treebeard.importers import web as web_importer_mod
 from treebeard.importers.web import WebImporter
 
 ARTICLE_HTML = """\
@@ -77,7 +78,10 @@ def install_fake_importer(
         )
         return WebImporter(url=url, now=now, client=client)
 
-    monkeypatch.setattr(import_cmd, "WebImporter", factory)
+    # `WebImporter` is now imported lazily inside the `web` subcommand to
+    # keep `tb` startup snappy, so we patch the source module instead of a
+    # module-level alias.
+    monkeypatch.setattr(web_importer_mod, "WebImporter", factory)
     monkeypatch.setattr(import_cmd, "_now_utc", lambda: now)
 
 

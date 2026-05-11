@@ -13,7 +13,7 @@ from treebeard.ui import TreebeardError
 
 @click.command("sync")
 def command() -> None:
-    """Pull from and push to the vault's configured git remote."""
+    """Synchronize with the vault's configured git remote."""
     cfg = load_config()
 
     if not git.has_remote(cfg.vault):

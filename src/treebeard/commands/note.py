@@ -24,7 +24,7 @@ from treebeard.ui import TreebeardError
 @click.command("note")
 @click.argument("name", required=False)
 def command(name: str | None) -> None:
-    """Create or open a markdown note in the vault."""
+    """Create or open a markdown note."""
     cfg = load_config()
 
     now = now_utc()

@@ -12,11 +12,13 @@ from datetime import UTC, datetime, timedelta
 
 import click
 
+from treebeard.cli_help import RichGroup
 from treebeard.config import load_config
-from treebeard.importers.granola import GranolaImporter
-from treebeard.importers.sync import sync
-from treebeard.importers.web import WebImporter
 from treebeard.ui import TreebeardError
+
+# Importer modules are deferred into each subcommand: `treebeard.importers.web`
+# pulls in trafilatura + bs4 (~130ms) and would otherwise load on every `tb`
+# invocation via command auto-registration. See CLAUDE.md "Startup performance".
 
 DEFAULT_LOOKBACK_DAYS = 7
 
@@ -25,9 +27,9 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
-@click.group("import")
+@click.group("import", cls=RichGroup)
 def command() -> None:
-    """Import artifacts from an external integration into the vault."""
+    """Import artifacts from external integrations."""
 
 
 @command.command("granola")
@@ -40,6 +42,9 @@ def command() -> None:
 )
 def granola(since: datetime | None) -> None:
     """Import meeting notes from Granola."""
+    from treebeard.importers.granola import GranolaImporter
+    from treebeard.importers.sync import sync
+
     cfg = load_config()
     if not cfg.granola_api_key:
         raise TreebeardError(
@@ -61,6 +66,9 @@ def granola(since: datetime | None) -> None:
 @click.argument("url")
 def web(url: str) -> None:
     """Import a web page as a markdown note."""
+    from treebeard.importers.sync import sync
+    from treebeard.importers.web import WebImporter
+
     cfg = load_config()
     now = _now_utc()
     importer = WebImporter(url=url, now=now)

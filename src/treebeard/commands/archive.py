@@ -89,6 +89,6 @@ def run(vault: pathlib.Path, previewer: str) -> None:
 
 @click.command("archive")
 def command() -> None:
-    """Soft-delete notes by moving them into `.treebeard/archive/`."""
+    """Soft-delete notes."""
     cfg = load_config()
     run(cfg.vault, cfg.previewer)

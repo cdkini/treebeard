@@ -30,7 +30,7 @@ from treebeard.ui import TreebeardError
 @click.command("init")
 @click.argument("path", type=click.Path())
 def command(path: str) -> None:
-    """Scaffold a new treebeard vault at PATH (or adopt one already there)."""
+    """Scaffold a new vault or connect to an existing one."""
     if is_initialized():
         raise TreebeardError(f"{config_path_for()} already configured; refusing to overwrite")
 

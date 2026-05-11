@@ -16,6 +16,7 @@ from click.testing import CliRunner
 from treebeard.cli import cli
 from treebeard.commands import import_ as import_cmd
 from treebeard.config import Config, config_path_for
+from treebeard.importers import granola as granola_importer_mod
 from treebeard.importers.granola import BASE_URL, GranolaImporter
 
 
@@ -127,7 +128,7 @@ def install_fake_importer(
         )
         return GranolaImporter(api_key="fake", client=client)
 
-    monkeypatch.setattr(import_cmd, "GranolaImporter", factory)
+    monkeypatch.setattr(granola_importer_mod, "GranolaImporter", factory)
 
 
 @pytest.fixture
@@ -527,7 +528,7 @@ def test_pagination_follows_cursor(
         )
         return GranolaImporter(api_key="fake", client=client)
 
-    monkeypatch.setattr(import_cmd, "GranolaImporter", factory)
+    monkeypatch.setattr(granola_importer_mod, "GranolaImporter", factory)
 
     result = runner.invoke(cli, ["import", "granola"])
     assert result.exit_code == 0, result.output
@@ -585,7 +586,7 @@ def test_api_401_surfaces_clear_error(
         )
         return GranolaImporter(api_key="bad", client=client)
 
-    monkeypatch.setattr(import_cmd, "GranolaImporter", factory)
+    monkeypatch.setattr(granola_importer_mod, "GranolaImporter", factory)
 
     result = runner.invoke(cli, ["import", "granola"])
     assert result.exit_code != 0

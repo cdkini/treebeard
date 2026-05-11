@@ -10,7 +10,7 @@ from treebeard.config import config_path_for, load_config
 
 @click.command("config")
 def command() -> None:
-    """Open the config file in your configured editor."""
+    """Open the config file."""
     cfg = load_config()
     path = config_path_for()
     editor.run_editor(cfg.editor, path)

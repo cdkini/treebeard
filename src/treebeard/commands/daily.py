@@ -23,7 +23,7 @@ def _today_local() -> date:
 
 @click.command("daily")
 def command() -> None:
-    """Create or open today's daily note in the vault."""
+    """Create or open today's daily note."""
     cfg = load_config()
     today = _today_local()
     path = cfg.vault / f"{today.isoformat()}.md"

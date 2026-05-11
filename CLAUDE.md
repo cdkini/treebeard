@@ -79,6 +79,19 @@ Implications when adding a subcommand:
 - **Archive guard is a PreToolUse hook** that denies `Read`/`Glob`/`Grep` whose path resolves into `<vault>/.treebeard/archive/`. Any new path-bearing tool needs the same treatment.
 - **`setting_sources=["project"]`** — the vault's `.claude/CLAUDE.md` and `.claude/` config flow through; the user's global Claude Code agent prompt and MCP servers are excluded by design.
 
+### Startup performance
+
+`tb` is a terminal-first tool — every command competes with `vim`, `fzf`, and a shell prompt for "feels instant." Cold-start latency from `tb <cmd>` to the first interactive frame (editor window, fzf picker, chat REPL) is a feature, not an afterthought.
+
+Command auto-registration (`commands/__init__.py`) imports every module under `treebeard.commands` on every `tb` invocation. Anything those modules import at top level lands on the hot path — including heavyweights from sibling commands the user didn't ask for.
+
+Rules:
+
+- **Defer heavyweight third-party imports** in command modules. Anything that pulls in `claude_agent_sdk`, `prompt_toolkit`, `trafilatura`, `bs4`, `httpx`, or similarly chunky transitive trees belongs *inside* the handler function, not at module top. Rich's submodules (`rich.markdown`, `rich.live`, `rich.spinner`) are also lazy-load candidates when only one command needs them; `rich.console` is cheap and fine at module top (`ui.py` already uses it).
+- **Don't eagerly import sibling commands' implementation modules** from a command module. `commands/chat.py` should not `from treebeard import chat` at top level — defer it into the handler. Same shape for any future command that fronts a heavy subsystem.
+- **Tests must patch the source module**, not a stale alias on the command module. When `commands/foo.py` lazy-imports `Bar` inside its handler, `monkeypatch.setattr(commands.foo, "Bar", ...)` is silently a no-op — patch `treebeard.<source_module>.Bar` instead. The test files for `tb import web` / `tb import granola` already follow this pattern.
+- **When adding a new heavy dependency**, profile before and after with `uv run python -X importtime -c "from treebeard.cli import cli" 2>&1 | tail -20`. The total at the bottom is the budget; today it sits around ~30ms for the `treebeard.cli` import (excluding the Python interpreter start). A new dep that pushes that above ~100ms needs a deferred-import plan in the same change.
+
 ### `<vault>/.treebeard/` layout
 
 `src/treebeard/vault_layout.py` is the single source of truth for what lives under `<vault>/.treebeard/` (the per-vault state dir, *not* `~/.treebeard/`, which is the user-level config dir handled in `treebeard.config`). Known sections today: `archive/` (soft-deleted notes, owned by `treebeard.archiver`) and `conversations/` (chat JSONL transcripts, owned by `treebeard.chat`).
