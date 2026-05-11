@@ -385,6 +385,113 @@ def test_make_client_wires_archive_guard_hook(vault: pathlib.Path) -> None:
     assert pre_tool_use, "expected a PreToolUse hook matcher"
     matchers = {m.matcher for m in pre_tool_use}
     assert "Read|Glob|Grep" in matchers
+    # PostToolUse scrubber on Glob|Grep to strip archived paths from
+    # results (the PreToolUse guard only checks inputs).
+    post_tool_use = options.hooks.get("PostToolUse") or []
+    assert post_tool_use, "expected a PostToolUse hook matcher"
+    post_matchers = {m.matcher for m in post_tool_use}
+    assert "Glob|Grep" in post_matchers
+
+
+def test_archive_scrubber_strips_archive_paths_from_glob_results(
+    vault: pathlib.Path,
+) -> None:
+    """The PostToolUse scrubber should remove lines that reference
+    paths under `.treebeard/archive/` from Glob/Grep results, leaving
+    other matches intact. Regression: prior behavior leaked archived
+    filenames into the chat because Glob results aren't input-checked."""
+    import asyncio
+
+    from treebeard.chat.client import _archive_scrubber_hook
+
+    hook = _archive_scrubber_hook(vault)
+    response = (
+        "2026-05-11.md\n.treebeard/archive/2026-05-07T21-57-10Z__just-a-test.md\n2026-05-08.md\n"
+    )
+    result = asyncio.run(
+        hook(
+            {"tool_name": "Glob", "tool_response": response},
+            "tool-use-id",
+            {"signal": None},
+        )
+    )
+    updated = result["hookSpecificOutput"]["updatedToolOutput"]
+    assert "2026-05-11.md" in updated
+    assert "2026-05-08.md" in updated
+    assert ".treebeard/archive" not in updated
+
+
+def test_archive_scrubber_handles_list_content_shape(vault: pathlib.Path) -> None:
+    """Claude Code sometimes returns tool results as `[{type: text,
+    text: ...}]` — scrubber must handle that shape too, not just bare
+    strings."""
+    import asyncio
+
+    from treebeard.chat.client import _archive_scrubber_hook
+
+    hook = _archive_scrubber_hook(vault)
+    response = [
+        {
+            "type": "text",
+            "text": ("2026-05-11.md\n.treebeard/archive/old.md\n2026-05-08.md\n"),
+        }
+    ]
+    result = asyncio.run(
+        hook(
+            {"tool_name": "Glob", "tool_response": response},
+            "tool-use-id",
+            {"signal": None},
+        )
+    )
+    updated = result["hookSpecificOutput"]["updatedToolOutput"]
+    assert isinstance(updated, list)
+    text = updated[0]["text"]
+    assert "2026-05-11.md" in text
+    assert "2026-05-08.md" in text
+    assert ".treebeard/archive" not in text
+
+
+def test_archive_scrubber_passthrough_when_no_archive_paths(vault: pathlib.Path) -> None:
+    """If no lines reference the archive, the hook returns `{}` (no
+    mutation) so the SDK passes the original response through
+    unchanged."""
+    import asyncio
+
+    from treebeard.chat.client import _archive_scrubber_hook
+
+    hook = _archive_scrubber_hook(vault)
+    response = "2026-05-11.md\n2026-05-08.md\n"
+    result = asyncio.run(
+        hook(
+            {"tool_name": "Glob", "tool_response": response},
+            "tool-use-id",
+            {"signal": None},
+        )
+    )
+    assert result == {}
+
+
+def test_archive_scrubber_returns_friendly_message_when_all_lines_archived(
+    vault: pathlib.Path,
+) -> None:
+    """If every result line is archived, return a useful signal rather
+    than empty output so the model knows what happened."""
+    import asyncio
+
+    from treebeard.chat.client import _archive_scrubber_hook
+
+    hook = _archive_scrubber_hook(vault)
+    response = ".treebeard/archive/a.md\n.treebeard/archive/b.md\n"
+    result = asyncio.run(
+        hook(
+            {"tool_name": "Glob", "tool_response": response},
+            "tool-use-id",
+            {"signal": None},
+        )
+    )
+    updated = result["hookSpecificOutput"]["updatedToolOutput"]
+    assert "no matches" in updated
+    assert ".treebeard/archive" in updated  # the explanation mentions it
 
 
 # ---------------------------------------------------------------------------
@@ -725,15 +832,17 @@ def test_archive_guard_denial_surfaces_in_chat_ui(
     assert "archive denied" in result.output
 
 
-def test_per_turn_footer_shows_model_tokens_cost_duration(
+def test_no_per_turn_footer(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     mock_claude_sdk: dict[str, Any],
     freeze_now: list[Any],
 ) -> None:
-    """The dim footer line lands after every reply with model, tokens,
-    cost, and duration."""
+    """Per-turn cost/token footer was removed — the only place cost
+    surfaces is the exit summary. The duration formatting (e.g. `4.2s`)
+    was unique to the per-turn footer and never appears in the summary
+    panel, so it's a clean regression marker."""
     del freeze_now
     write_cfg(cfg_dir, vault)
     mock_claude_sdk["cost_usd"] = 0.0123
@@ -741,30 +850,28 @@ def test_per_turn_footer_shows_model_tokens_cost_duration(
     mock_claude_sdk["usage"] = {"input_tokens": 1234, "output_tokens": 340}
     result = runner.invoke(cli, ["chat"], input="hi\n")
     assert result.exit_code == 0, result.output
-    # Compact footer pieces — assert the substrings, not the whole line.
-    assert "claude-sonnet-4-6" in result.output
-    assert "1.2k in / 340 out" in result.output
-    assert "$0.0123" in result.output
-    assert "4.2s" in result.output
+    assert "hello world" in result.output
+    # Per-turn duration was the footer's signature — must not leak.
+    assert "4.2s" not in result.output
 
 
-def test_per_turn_footer_subscription_when_cost_zero_or_none(
+def test_session_summary_shows_subscription_when_cost_none(
     runner: CliRunner,
     cfg_dir: pathlib.Path,
     vault: pathlib.Path,
     mock_claude_sdk: dict[str, Any],
     freeze_now: list[Any],
 ) -> None:
-    """Cost of 0.0 or None should render `subscription`, not `$0.0000`,
-    matching the session-summary convention."""
+    """Cost of None across a session should render `subscription` in
+    the exit summary, not `$0.0000`."""
     del freeze_now
     write_cfg(cfg_dir, vault)
     mock_claude_sdk["cost_usd"] = None
     result = runner.invoke(cli, ["chat"], input="hi\n/exit\n")
     assert result.exit_code == 0, result.output
     assert "subscription" in result.output
-    # No literal dollar sign should leak — both per-turn footer and
-    # session summary print `subscription` for free / unmetered turns.
+    # No literal dollar sign should leak — the session summary prints
+    # `subscription` for free / unmetered turns.
     assert "$" not in result.output
 
 
@@ -892,18 +999,22 @@ def test_spinner_text_for_unit() -> None:
     assert spinner_text_for(SpinnerState.TOOL, "Custom") == "working with Custom…"
 
 
-def test_turn_renderer_tty_mode_renders_response_and_footer(vault: pathlib.Path) -> None:
-    """Direct test of `TurnRenderer` in TTY mode: streams text via
-    StreamEvents into a Live, then renders a tool card and footer.
-    Asserts on the captured Console output rather than the CLI path,
-    because `CliRunner` is always non-TTY."""
+def test_turn_renderer_tty_mode_renders_gutter_and_tool_card(vault: pathlib.Path) -> None:
+    """Direct test of `TurnRenderer` in TTY mode: drives a full turn
+    with text + a tool call through the renderer and asserts on the
+    captured Console output. `CliRunner` is always non-TTY, so this is
+    the only place the TTY rendering path gets exercised.
+
+    Assertions are structural — no per-turn footer (removed), tool
+    label and result summary land inside the grouped card, the gutter
+    bar character precedes content.
+    """
     import asyncio
     import io
 
     from claude_agent_sdk import (
         AssistantMessage,
         ResultMessage,
-        StreamEvent,
         TextBlock,
         ToolResultBlock,
         ToolUseBlock,
@@ -913,72 +1024,39 @@ def test_turn_renderer_tty_mode_renders_response_and_footer(vault: pathlib.Path)
 
     from treebeard.chat.ui import TurnRenderer
 
-    del vault  # Just need a fixture for monkeypatched defaults.
+    del vault
 
     buf = io.StringIO()
-    out = Console(
-        file=buf,
-        force_terminal=True,
-        width=120,
-        legacy_windows=False,
-    )
+    out = Console(file=buf, force_terminal=True, width=120, legacy_windows=False)
 
     async def drive() -> None:
         renderer = TurnRenderer(out)
-        # 1) StreamEvent text deltas (open the text Live).
-        for chunk in ("Hello", " world"):
-            await renderer.consume(
-                StreamEvent(
-                    uuid="u",
-                    session_id="s",
-                    event={
-                        "type": "content_block_delta",
-                        "delta": {"type": "text_delta", "text": chunk},
-                    },
-                    parent_tool_use_id=None,
-                )
-            )
-        # 2) StreamEvent tool_use start (swap spinner).
-        await renderer.consume(
-            StreamEvent(
-                uuid="u",
-                session_id="s",
-                event={
-                    "type": "content_block_start",
-                    "content_block": {"type": "tool_use", "name": "Read"},
-                },
-                parent_tool_use_id=None,
-            )
-        )
-        # 3) AssistantMessage with text + tool use.
+        # AssistantMessage with a tool call (opens the gutter).
         await renderer.consume(
             AssistantMessage(
                 content=[
-                    TextBlock(text="Hello world"),
                     ToolUseBlock(id="t1", name="Read", input={"file_path": "foo.md"}),
                 ],
                 model="claude-sonnet-4-6",
                 parent_tool_use_id=None,
                 error=None,
-                usage={"input_tokens": 10, "output_tokens": 5},
+                usage=None,
                 message_id=None,
                 stop_reason="tool_use",
                 session_id=None,
                 uuid=None,
             )
         )
-        # 4) UserMessage with tool result.
+        # UserMessage delivering the tool result.
         await renderer.consume(
             UserMessage(
-                content=[
-                    ToolResultBlock(tool_use_id="t1", content="ok", is_error=False),
-                ],
+                content=[ToolResultBlock(tool_use_id="t1", content="ok", is_error=False)],
                 uuid=None,
                 parent_tool_use_id=None,
                 tool_use_result=None,
             )
         )
-        # 5) Final AssistantMessage + ResultMessage.
+        # Final AssistantMessage with prose.
         await renderer.consume(
             AssistantMessage(
                 content=[TextBlock(text="Done.")],
@@ -1014,8 +1092,7 @@ def test_turn_renderer_tty_mode_renders_response_and_footer(vault: pathlib.Path)
             )
         )
         summary = renderer.finalize()
-        # Summary text comes from assembled AssistantMessage TextBlocks.
-        assert "Hello world" in summary.text
+        # Summary metadata survives into the JSONL-bound payload.
         assert "Done." in summary.text
         assert summary.cost_usd == 0.0042
         assert summary.duration_ms == 1500
@@ -1023,18 +1100,23 @@ def test_turn_renderer_tty_mode_renders_response_and_footer(vault: pathlib.Path)
 
     asyncio.run(drive())
     output = buf.getvalue()
-    # Rich panel borders (any of the box-drawing variants Rich uses).
+    # Tool label and grouped-card title appear in the rendered frame.
     assert "Read" in output
     assert "foo.md" in output
-    # Footer made it through.
-    assert "claude-sonnet-4-6" in output
-    assert "$0.0042" in output
-    assert "1.5s" in output
+    assert "tool calls" in output
+    # The gutter bar character is the visible signal that the new
+    # design is engaged.
+    assert "┃" in output
+    # Per-turn footer was removed — no model id leaking into the stream.
+    assert "claude-sonnet-4-6" not in output
+    assert "$0.0042" not in output
+    assert "1.5s" not in output
 
 
 def test_turn_renderer_finalize_is_idempotent() -> None:
-    """Calling finalize() twice must not double-print the footer or
-    crash. Important so the Ctrl-C path can call it defensively."""
+    """Calling finalize() twice must not crash or print anything twice.
+    Important so the Ctrl-C path can call it defensively from an
+    except-branch even after a normal finalize landed."""
     import io
 
     from rich.console import Console
@@ -1047,8 +1129,347 @@ def test_turn_renderer_finalize_is_idempotent() -> None:
     first = renderer.finalize()
     second = renderer.finalize()
     assert first == second
-    # The footer prints `subscription` (no model, no usage, no cost).
-    assert buf.getvalue().count("subscription") == 1
+    # A finalized renderer with no content emits nothing.
+    assert buf.getvalue() == ""
+
+
+def test_turn_renderer_gutter_wraps_streamed_prose() -> None:
+    """Streamed text deltas accumulate and render inside a magenta
+    gutter once the buffer crosses a paragraph break (or finalize
+    flushes a short reply). Smoke test of the new TTY rendering path."""
+    import asyncio
+    import io
+
+    from claude_agent_sdk import AssistantMessage, StreamEvent, TextBlock
+    from rich.console import Console
+
+    from treebeard.chat.ui import TurnRenderer
+
+    buf = io.StringIO()
+    out = Console(file=buf, force_terminal=True, width=80, legacy_windows=False)
+    renderer = TurnRenderer(out)
+
+    async def drive() -> None:
+        for chunk in ("Hello", " world"):
+            await renderer.consume(
+                StreamEvent(
+                    uuid="u",
+                    session_id="s",
+                    event={
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": chunk},
+                    },
+                    parent_tool_use_id=None,
+                )
+            )
+        await renderer.consume(
+            AssistantMessage(
+                content=[TextBlock(text="Hello world")],
+                model="claude-sonnet-4-6",
+                parent_tool_use_id=None,
+                error=None,
+                usage={"input_tokens": 1, "output_tokens": 2},
+                message_id=None,
+                stop_reason="end_turn",
+                session_id=None,
+                uuid=None,
+            )
+        )
+
+    asyncio.run(drive())
+    renderer.finalize()
+    output = buf.getvalue()
+    # Gutter bar + prose both present.
+    assert "┃" in output
+    assert "Hello world" in output
+
+
+def test_turn_renderer_grouped_tool_card_lists_all_tools() -> None:
+    """When the model invokes multiple tools in one turn, the renderer
+    builds a single `tool calls (N)` card with one row per call rather
+    than N bordered panels."""
+    import asyncio
+    import io
+
+    from claude_agent_sdk import AssistantMessage, ToolResultBlock, ToolUseBlock, UserMessage
+    from rich.console import Console
+
+    from treebeard.chat.ui import TurnRenderer
+
+    buf = io.StringIO()
+    out = Console(file=buf, force_terminal=True, width=120, legacy_windows=False)
+    renderer = TurnRenderer(out)
+
+    async def drive() -> None:
+        await renderer.consume(
+            AssistantMessage(
+                content=[
+                    ToolUseBlock(id="t1", name="Grep", input={"pattern": "auth"}),
+                    ToolUseBlock(id="t2", name="Read", input={"file_path": "auth-notes.md"}),
+                    ToolUseBlock(id="t3", name="Read", input={"file_path": "login-flow.md"}),
+                ],
+                model="claude-sonnet-4-6",
+                parent_tool_use_id=None,
+                error=None,
+                usage=None,
+                message_id=None,
+                stop_reason="tool_use",
+                session_id=None,
+                uuid=None,
+            )
+        )
+        await renderer.consume(
+            UserMessage(
+                content=[
+                    ToolResultBlock(tool_use_id="t1", content="3 matches", is_error=False),
+                    ToolResultBlock(tool_use_id="t2", content="42 lines", is_error=False),
+                    ToolResultBlock(tool_use_id="t3", content="permission denied", is_error=True),
+                ],
+                uuid=None,
+                parent_tool_use_id=None,
+                tool_use_result=None,
+            )
+        )
+
+    asyncio.run(drive())
+    renderer.finalize()
+    output = buf.getvalue()
+    # Single grouped card with N=3, listing all three tool labels.
+    assert "tool calls (3)" in output
+    assert "Grep" in output
+    assert "auth-notes.md" in output
+    assert "login-flow.md" in output
+    # Error row uses the red ✗ glyph (the error summary text leaks through).
+    assert "permission denied" in output
+    # Success rows resolved with ✓.
+    assert "✓" in output
+    assert "✗" in output
+
+
+def test_draft_quiet_path_does_not_stream_fenced_reply(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """`/draft` runs the synthesis turn behind a spinner — the raw
+    fenced `draft-note` block must not leak into the terminal output.
+    The transcript still captures it for audit."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["replies"] = [[_VALID_DRAFT_BLOCK]]
+
+    result = runner.invoke(cli, ["chat"], input="/draft\n")
+    assert result.exit_code == 0, result.output
+    # The note still lands — synthesis ran end-to-end.
+    assert (vault / "migration-cutover-notes.md").exists()
+    # But the literal fence opener never appeared in the terminal.
+    assert "```draft-note" not in result.output
+    assert "title: Migration Cutover Notes" not in result.output
+    # Transcript captures the assistant turn including the raw fence.
+    transcript = vault / ".treebeard" / "conversations" / "chat-20260507-142305.jsonl"
+    raw = transcript.read_text(encoding="utf-8")
+    assert "```draft-note" in raw
+
+
+def test_split_refs_trailer_pulls_trailing_block() -> None:
+    """A trailing `Refs:` block with bullets is split off from the
+    prose so the renderer can paint it tightly. Mid-text "Refs:" must
+    not trigger."""
+    from treebeard.chat.ui import _split_refs_trailer
+
+    text = (
+        "Two open TODOs today:\n\n"
+        "1. fix lint\n"
+        "2. review stack\n\n"
+        "Refs:\n"
+        "  - 2026-05-11.md\n"
+        "  - 2026-05-08.md\n"
+    )
+    prose, refs = _split_refs_trailer(text)
+    assert prose.endswith("review stack")
+    assert refs == ["2026-05-11.md", "2026-05-08.md"]
+
+    # Mid-text mention isn't a trailer.
+    text2 = "Refs: are documented in the README. Here's a list:\n- a\n- b\n"
+    prose2, refs2 = _split_refs_trailer(text2)
+    assert prose2 == text2
+    assert refs2 is None
+
+    # No bullets after Refs: — fall back to passthrough.
+    text3 = "Some prose.\n\nRefs:\n\n"
+    _, refs3 = _split_refs_trailer(text3)
+    assert refs3 is None
+
+
+def test_render_refs_block_packs_label_and_bullets_tight() -> None:
+    """The Refs renderable puts `Refs:` and each bullet on their own
+    line with no blank between — that's the whole point of replacing
+    Rich's Markdown list rendering for this trailer."""
+    import io
+
+    from rich.console import Console
+
+    from treebeard.chat.ui import _render_refs_block
+
+    buf = io.StringIO()
+    out = Console(file=buf, force_terminal=False, width=80, no_color=True)
+    out.print(_render_refs_block(["2026-05-11.md", "projects/migration.md"]))
+    lines = buf.getvalue().splitlines()
+    # First non-empty line is the label, immediately followed by bullets.
+    assert lines[0].strip() == "Refs:"
+    assert lines[1].strip().startswith("•")
+    assert "2026-05-11.md" in lines[1]
+    assert lines[2].strip().startswith("•")
+    assert "projects/migration.md" in lines[2]
+    # No blank line between label and bullets.
+    assert all(line.strip() != "" for line in lines[:3])
+
+
+def test_turn_renderer_mark_interrupted_plain_mode_emits_line() -> None:
+    """`mark_interrupted` in non-TTY mode prints a single `⚠ interrupted`
+    line to the console — covers the session loop's Ctrl-C path."""
+    import io
+
+    from rich.console import Console
+
+    from treebeard.chat.ui import GutterStyle, TurnRenderer
+
+    buf = io.StringIO()
+    out = Console(file=buf, force_terminal=False, width=80)
+    renderer = TurnRenderer(out)
+    renderer.mark_interrupted()
+    renderer.finalize()
+    assert renderer._gutter_style is GutterStyle.INTERRUPTED
+    assert "interrupted" in buf.getvalue()
+
+
+def test_turn_renderer_mark_error_tty_mode_paints_red_gutter() -> None:
+    """`mark_error` in TTY mode after the gutter has opened repaints
+    the gutter red and surfaces the error inside it. Covers the path
+    where a turn fails after some content has already streamed."""
+    import asyncio
+    import io
+
+    from claude_agent_sdk import AssistantMessage, TextBlock
+    from rich.console import Console
+
+    from treebeard.chat.ui import GutterStyle, TurnRenderer
+
+    buf = io.StringIO()
+    out = Console(file=buf, force_terminal=True, width=80, legacy_windows=False)
+    renderer = TurnRenderer(out)
+
+    async def drive() -> None:
+        # Push some content so the gutter opens.
+        await renderer.consume(
+            AssistantMessage(
+                content=[TextBlock(text="Partial reply")],
+                model="claude-sonnet-4-6",
+                parent_tool_use_id=None,
+                error=None,
+                usage=None,
+                message_id=None,
+                stop_reason="end_turn",
+                session_id=None,
+                uuid=None,
+            )
+        )
+
+    asyncio.run(drive())
+    renderer.mark_error("claude error: boom")
+    renderer.finalize()
+    assert renderer._gutter_style is GutterStyle.ERROR
+    output = buf.getvalue()
+    assert "claude error: boom" in output
+
+
+def test_turn_renderer_opens_gutter_on_paragraph_break() -> None:
+    """In TTY mode, streamed deltas don't open the gutter until a
+    paragraph break (`\\n\\n`) arrives — until then the outer
+    `thinking…` spinner holds the line. Once the buffer crosses the
+    break, the gutter opens with the accumulated prose."""
+    import asyncio
+    import io
+
+    from claude_agent_sdk import StreamEvent
+    from rich.console import Console
+
+    from treebeard.chat.ui import TurnRenderer
+
+    buf = io.StringIO()
+    out = Console(file=buf, force_terminal=True, width=80, legacy_windows=False)
+    renderer = TurnRenderer(out)
+
+    async def drive() -> None:
+        # First two deltas: no paragraph break → gutter stays closed.
+        for chunk in ("Here is ", "the first part"):
+            await renderer.consume(
+                StreamEvent(
+                    uuid="u",
+                    session_id="s",
+                    event={
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": chunk},
+                    },
+                    parent_tool_use_id=None,
+                )
+            )
+        assert renderer._gutter_live is None
+        # Third delta carries the paragraph break → gutter opens.
+        await renderer.consume(
+            StreamEvent(
+                uuid="u",
+                session_id="s",
+                event={
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": ".\n\nMore prose."},
+                },
+                parent_tool_use_id=None,
+            )
+        )
+        assert renderer._gutter_live is not None
+
+    asyncio.run(drive())
+    renderer.finalize()
+    output = buf.getvalue()
+    assert "Here is the first part" in output
+
+
+def test_run_turn_quiet_records_transcript_with_metadata(
+    runner: CliRunner,
+    cfg_dir: pathlib.Path,
+    vault: pathlib.Path,
+    mock_claude_sdk: dict[str, Any],
+    fake_editor: list[Any],
+    freeze_now: list[Any],
+) -> None:
+    """`_run_turn_quiet` (used by `/draft`) writes a full assistant
+    transcript record — content, model, usage, cost — even though the
+    reply never streams to the terminal. Smoke test of the quiet
+    driver's transcript handoff."""
+    del freeze_now, fake_editor
+    write_cfg(cfg_dir, vault)
+    mock_claude_sdk["cost_usd"] = 0.0042
+    mock_claude_sdk["usage"] = {"input_tokens": 11, "output_tokens": 7}
+    mock_claude_sdk["replies"] = [[_VALID_DRAFT_BLOCK]]
+
+    result = runner.invoke(cli, ["chat"], input="/draft\n")
+    assert result.exit_code == 0, result.output
+
+    transcript = vault / ".treebeard" / "conversations" / "chat-20260507-142305.jsonl"
+    lines = [json.loads(line) for line in transcript.read_text().splitlines()]
+    assistant_turns = [r for r in lines if r.get("role") == "assistant"]
+    assert len(assistant_turns) == 1
+    record = assistant_turns[0]
+    # Full fenced reply landed in transcript content.
+    assert "```draft-note" in record["content"]
+    # Metadata captured by the quiet driver matches the stub's settings.
+    assert record["model"] == "claude-sonnet-4-6"
+    assert record["usage"] == {"input_tokens": 11, "output_tokens": 7}
+    assert record["cost_usd"] == 0.0042
 
 
 def test_slash_completer_suggests_only_when_buffer_starts_with_slash() -> None:
@@ -1111,11 +1532,10 @@ def test_build_prompt_session_constructs_when_stdin_is_a_tty(
     assert isinstance(session.completer, SlashCompleter)
 
 
-def test_turn_renderer_close_all_lives_marks_pending_tools_interrupted() -> None:
-    """If a turn is interrupted (Ctrl-C) before tool results arrive,
-    cleanup must close any open tool-card Lives so the terminal isn't
-    left with a frozen spinner. Plain mode is silent on interrupt; we
-    verify the renderer reaches a clean state."""
+def test_turn_renderer_finalize_marks_unresolved_tools_interrupted() -> None:
+    """If a turn ends (Ctrl-C, SDK error, EOF) before tool results
+    arrive, cleanup must close the gutter Live and mark unresolved
+    rows so the terminal isn't left with a frozen spinner."""
     import asyncio
     import io
 
@@ -1146,11 +1566,19 @@ def test_turn_renderer_close_all_lives_marks_pending_tools_interrupted() -> None
     asyncio.run(drive())
     # Simulate Ctrl-C: finalize without ever delivering a UserMessage.
     renderer.finalize()
-    # All lives should be closed.
-    assert renderer._text_live is None
+    # All Lives closed.
+    assert renderer._gutter_live is None
     assert renderer._outer_live is None
-    for pending in renderer._pending_tools.values():
-        assert pending.resolved is True
-        assert pending.live is None
+    # All tool rows across all tool groups resolved with an
+    # "interrupted" summary.
+    from treebeard.chat.ui import _ToolGroup
+
+    rows = [r for b in renderer._blocks if isinstance(b, _ToolGroup) for r in b.rows]
+    assert rows
+    for row in rows:
+        assert row.resolved is True
+        assert row.summary == "interrupted"
     output = buf.getvalue()
+    # Terminal output mentions the interrupted state — either via the
+    # row summary or the closing line.
     assert "interrupted" in output

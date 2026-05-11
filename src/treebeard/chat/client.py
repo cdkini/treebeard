@@ -104,6 +104,79 @@ def _archive_guard_hook(vault: pathlib.Path) -> Any:
     return _hook
 
 
+def _archive_scrubber_hook(vault: pathlib.Path) -> Any:
+    """PostToolUse hook: strip archived paths from Glob/Grep results.
+
+    The PreToolUse guard catches calls whose *input* targets the archive,
+    but a Glob like `pattern="2026-*.md"` from the vault root traverses
+    the entire tree — including `.treebeard/archive/` — and returns
+    matched paths in its *output*. The model would then see those paths
+    and try to Read them (denied) or just leak them back to the user.
+
+    This hook walks the tool response and removes any line containing a
+    path that resolves into the archive. Works on string content and
+    list-of-dicts content (Claude Code's two common shapes). If every
+    line gets stripped, returns a friendly "no non-archive matches"
+    message so the model gets a useful signal rather than empty output.
+    """
+    archive_rel = str(vault_layout.ARCHIVE_REL).rstrip("/") + "/"
+
+    def _line_leaks_archive(line: str) -> bool:
+        # Cheap substring check first — most lines don't contain the
+        # archive prefix at all, so we avoid the expensive resolve().
+        if archive_rel not in line:
+            return False
+        # The substring may appear mid-word in arbitrary prose; do a
+        # path-level check on each whitespace-delimited token to be sure.
+        for token in line.split():
+            if archive_rel in token and _path_targets_archive(token, vault):
+                return True
+        return False
+
+    def _scrub_text(text: str) -> str:
+        kept = [line for line in text.splitlines() if not _line_leaks_archive(line)]
+        if not kept:
+            return (
+                f"(no matches outside `{vault_layout.ARCHIVE_REL}` — "
+                "archived notes are off-limits to chat)"
+            )
+        # Preserve trailing newline if the original had one.
+        suffix = "\n" if text.endswith("\n") else ""
+        return "\n".join(kept) + suffix
+
+    async def _hook(input_data: Any, _tool_use_id: str | None, _ctx: Any) -> dict[str, Any]:
+        response = input_data.get("tool_response")
+        scrubbed: Any
+        if isinstance(response, str):
+            scrubbed = _scrub_text(response)
+            if scrubbed == response:
+                return {}
+        elif isinstance(response, list):
+            new_list = []
+            mutated = False
+            for entry in response:
+                if isinstance(entry, dict) and isinstance(entry.get("text"), str):
+                    new_text = _scrub_text(entry["text"])
+                    if new_text != entry["text"]:
+                        mutated = True
+                        new_list.append({**entry, "text": new_text})
+                        continue
+                new_list.append(entry)
+            if not mutated:
+                return {}
+            scrubbed = new_list
+        else:
+            return {}
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "updatedToolOutput": scrubbed,
+            }
+        }
+
+    return _hook
+
+
 def make_client(vault: pathlib.Path, model: str) -> ClaudeSDKClient:
     """Vault-aware chat session.
 
@@ -138,6 +211,12 @@ def make_client(vault: pathlib.Path, model: str) -> ClaudeSDKClient:
                 HookMatcher(
                     matcher="Read|Glob|Grep",
                     hooks=[_archive_guard_hook(vault)],
+                ),
+            ],
+            "PostToolUse": [
+                HookMatcher(
+                    matcher="Glob|Grep",
+                    hooks=[_archive_scrubber_hook(vault)],
                 ),
             ],
         },

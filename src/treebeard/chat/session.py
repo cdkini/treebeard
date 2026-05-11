@@ -20,10 +20,13 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+from typing import Any
 
 from claude_agent_sdk import ClaudeSDKClient, ClaudeSDKError
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
+from rich.spinner import Spinner
 from rich.text import Text
 
 from treebeard import timefmt, ui
@@ -44,7 +47,7 @@ async def _repl_async(vault: pathlib.Path, model: str) -> None:
     transcript = conversation_path(vault, started_at)
     out = Console(highlight=False)
 
-    _render_header(vault, transcript, model)
+    _render_header(vault, model)
     session = build_prompt_session()
 
     try:
@@ -83,34 +86,45 @@ async def _repl_async(vault: pathlib.Path, model: str) -> None:
                     },
                 )
 
+                renderer = TurnRenderer(out)
                 try:
-                    await _run_turn(client, user_text, out, transcript)
+                    await _run_turn(client, user_text, transcript, renderer)
                 except ClaudeSDKError as exc:
-                    ui.error(f"claude error: {exc}")
+                    # Paint the gutter red and append the error inside it
+                    # so the message stays visually attached to the turn
+                    # it belonged to.
+                    renderer.mark_error(f"claude error: {exc}")
+                    renderer.finalize()
                     continue
                 except KeyboardInterrupt:
-                    out.print()
-                    ui.warn("interrupted")
+                    renderer.mark_interrupted()
+                    renderer.finalize()
                     continue
     finally:
         _render_summary(transcript)
 
 
-def _render_header(vault: pathlib.Path, transcript: pathlib.Path, model: str) -> None:
+def _render_header(vault: pathlib.Path, model: str) -> None:
+    """Render the compact chat-session header.
+
+    Two rows of `vault` / `model` followed by the slash commands. The
+    transcript path is no longer displayed — it's predictable from the
+    vault path and the auto-commit hook picks it up automatically.
+    Vault is tilde-shortened so the header stays narrow on screens with
+    a long `$HOME`.
+    """
+    vault_display = _tilde_path(vault)
     parts: list[tuple[str, str]] = [
-        ("vault      ", "dim"),
-        (f"{vault}\n", "white"),
-        ("transcript ", "dim"),
-        (f"{transcript}\n", "white"),
-        ("model      ", "dim"),
+        ("vault  ", "dim"),
+        (f"{vault_display}\n", "white"),
+        ("model  ", "dim"),
         (f"{model}\n", "white"),
-        ("commands   ", "dim"),
     ]
     sorted_commands = sorted(SLASH_COMMANDS, key=lambda pair: pair[0])
     cmd_width = max(len(cmd) for cmd, _ in sorted_commands)
     for index, (cmd, blurb) in enumerate(sorted_commands):
         if index > 0:
-            parts.append(("\n           ", "dim"))
+            parts.append(("\n", "dim"))
         parts.append((f"{cmd.ljust(cmd_width)}  ", "white"))
         parts.append((blurb, "dim"))
     body = Text.assemble(*parts)
@@ -118,11 +132,21 @@ def _render_header(vault: pathlib.Path, transcript: pathlib.Path, model: str) ->
         Panel(
             body,
             title="[bold]tb chat[/bold]",
-            subtitle="[dim]Claude Code subscription · read-only vault access[/dim]",
             border_style="cyan",
             expand=False,
         )
     )
+
+
+def _tilde_path(path: pathlib.Path) -> str:
+    """Render a path with `$HOME` collapsed to `~`. Falls back to the
+    full string if the path isn't under `$HOME`."""
+    try:
+        home = pathlib.Path.home()
+        rel = path.resolve().relative_to(home.resolve())
+        return f"~/{rel}" if str(rel) != "." else "~"
+    except (ValueError, OSError):
+        return str(path)
 
 
 def _render_summary(transcript: pathlib.Path) -> None:
@@ -193,26 +217,103 @@ def _render_summary(transcript: pathlib.Path) -> None:
     )
 
 
+async def _run_turn_quiet(
+    client: ClaudeSDKClient,
+    user_text: str,
+    transcript: pathlib.Path,
+    spinner_label: str,
+) -> str:
+    """Drive one turn with the response hidden behind a spinner.
+
+    Used by `/draft`: the model emits a fenced `draft-note` block that
+    is implementation detail to the user. We don't want to stream that
+    fence into the terminal; we just want the assembled text back so
+    the caller can parse it. The transcript still receives the assistant
+    turn record (model, usage, cost, raw content) so the audit trail is
+    unchanged.
+
+    Returns the assembled assistant text.
+    """
+    await client.query(user_text)
+    text_chunks: list[str] = []
+    model: str | None = None
+    usage: dict[str, Any] | None = None
+    stop_reason: str | None = None
+    cost_usd: float | None = None
+    duration_ms: int | None = None
+
+    # Lazy SDK imports happen at call site since these are already loaded by
+    # the caller's stack — keeping them local to the function only adds noise.
+    from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+
+    spinner: Live | None = None
+    if status_console.is_terminal:
+        spinner = Live(
+            Spinner("dots", text=Text(spinner_label, style="dim")),
+            console=status_console,
+            refresh_per_second=12,
+            transient=True,
+        )
+        spinner.__enter__()
+    try:
+        async for msg in client.receive_response():
+            if isinstance(msg, AssistantMessage):
+                if msg.model:
+                    model = msg.model
+                if msg.usage is not None:
+                    usage = msg.usage
+                if msg.stop_reason is not None:
+                    stop_reason = msg.stop_reason
+                for block in msg.content:
+                    if isinstance(block, TextBlock):
+                        text_chunks.append(block.text)
+            elif isinstance(msg, ResultMessage):
+                cost_usd = msg.total_cost_usd
+                duration_ms = msg.duration_ms
+                if msg.usage is not None and usage is None:
+                    usage = msg.usage
+                if msg.stop_reason is not None and stop_reason is None:
+                    stop_reason = msg.stop_reason
+    finally:
+        if spinner is not None:
+            spinner.__exit__(None, None, None)
+
+    text = "".join(text_chunks)
+    append_jsonl(
+        transcript,
+        {
+            "ts": timefmt.now_utc().isoformat(),
+            "role": "assistant",
+            "content": text,
+            "model": model,
+            "usage": usage,
+            "stop_reason": stop_reason,
+            "cost_usd": cost_usd,
+            "duration_ms": duration_ms,
+        },
+    )
+    return text
+
+
 async def _run_turn(
     client: ClaudeSDKClient,
     user_text: str,
-    out: Console,
     transcript: pathlib.Path,
+    renderer: TurnRenderer,
 ) -> str:
-    """Drive one turn: stream the response through `TurnRenderer`, then
-    log the assistant turn to the JSONL transcript.
+    """Drive one turn: stream the response through `renderer`, then log
+    the assistant turn to the JSONL transcript.
 
     Returns the assembled assistant text. The REPL ignores it;
     `slash._handle_draft` uses it to parse the synthesis sentinel block.
+    The caller owns the renderer's lifecycle — passing it in lets the
+    session loop paint a red/yellow gutter on errors/interrupts before
+    finalizing.
     """
     await client.query(user_text)
-    renderer = TurnRenderer(out)
     async for msg in client.receive_response():
         await renderer.consume(msg)
     summary = renderer.finalize()
-
-    # Thin separator between turns (dim rule, no body).
-    status_console.rule(style="dim")
 
     append_jsonl(
         transcript,

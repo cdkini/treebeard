@@ -238,9 +238,10 @@ async def _handle_draft(
     """
     # Local imports avoid a load-time cycle: `commands.note` imports
     # `treebeard.config`, fine at runtime but cyclic if pulled in at
-    # chat-package import. `session._run_turn` is imported here rather
-    # than at module top to break a slash→session cycle.
-    from treebeard.chat.session import _run_turn
+    # chat-package import. `session._run_turn_quiet` is imported here
+    # rather than at module top to break a slash→session cycle.
+    del out  # quiet flow renders directly to status_console
+    from treebeard.chat.session import _run_turn_quiet
     from treebeard.commands.note import create_named_note
     from treebeard.config import load_config
     from treebeard.frontmatter import Source
@@ -256,7 +257,7 @@ async def _handle_draft(
         },
     )
 
-    reply = await _run_turn(client, SYNTHESIS_INSTRUCTION, out, transcript)
+    reply = await _run_turn_quiet(client, SYNTHESIS_INSTRUCTION, transcript, "synthesizing…")
     parsed = _parse_draft_block(reply)
     if parsed is None:
         append_jsonl(
@@ -268,7 +269,7 @@ async def _handle_draft(
                 "meta": {"synthetic": True},
             },
         )
-        reply = await _run_turn(client, SYNTHESIS_REPROMPT, out, transcript)
+        reply = await _run_turn_quiet(client, SYNTHESIS_REPROMPT, transcript, "re-prompting model…")
         parsed = _parse_draft_block(reply)
 
     if parsed is None:
@@ -304,7 +305,17 @@ async def _handle_draft(
             "path": str(path),
         },
     )
+    ui.success(f"wrote {_display_path(path)}")
     return SlashOutcome.BREAK
+
+
+def _display_path(path: pathlib.Path) -> str:
+    """Tilde-shorten a path for display, falling back to its full form."""
+    try:
+        home = pathlib.Path.home()
+        return f"~/{path.resolve().relative_to(home.resolve())}"
+    except (ValueError, OSError):
+        return str(path)
 
 
 SLASH_HANDLERS: dict[str, SlashHandler] = {
