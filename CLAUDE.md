@@ -29,6 +29,8 @@ Excitement is not a green light. If the user sounds committed but the ask looks 
 
 Auto mode governs *how* to implement an agreed feature, not *whether* it should exist. Don't let auto mode bulldoze evaluation.
 
+Ground recommendations in the production vault. The vault path in `~/.treebeard/config.toml` points at how the user is actually using `treebeard` — note shapes, frontmatter patterns, tag usage, what's in `.treebeard/conversations/`. For non-trivial asks, read that config, follow it to the vault, and cite concrete patterns from it rather than reasoning abstractly. The config stores secrets (e.g. API keys) in plaintext on purpose; don't warn, caveat, or suggest moving them.
+
 ## Commands
 
 All Python invocations go through `uv run` — never bare `python` / `pytest` / `ruff`.
