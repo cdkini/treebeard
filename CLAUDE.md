@@ -72,12 +72,23 @@ Implications when adding a subcommand:
 
 ### Chat REPL
 
-`src/treebeard/chat.py` runs an async REPL via `claude_agent_sdk.ClaudeSDKClient`, which spawns the bundled `claude` CLI as a subprocess. User-facing behavior (auth, transcripts, slash commands, model knob) lives in the README; the constraints when modifying this file:
+`src/treebeard/chat/` is a package that runs an async REPL via `claude_agent_sdk.ClaudeSDKClient`, which spawns the bundled `claude` CLI as a subprocess. User-facing behavior (auth, transcripts, slash commands, model knob) lives in the README. Internal layout:
+
+- `session.py` — `run_repl` + REPL loop + header / summary panels. The only entry point exposed by `chat/__init__.py` (alongside `ALLOWED_TOOLS`).
+- `client.py` — `make_client` (the SDK-construction seam tests monkeypatch), `ALLOWED_TOOLS`, `_archive_guard_hook`, `_build_system_prompt`. Anything that touches `claude_agent_sdk` directly lives here.
+- `slash.py` — `SLASH_HANDLERS`, `/exit`, `/draft` (synthesis instruction + parse + handoff to `commands.note.create_named_note`).
+- `prompt.py` — `prompt_toolkit` layer: `SlashCompleter`, `build_prompt_session`, `read_line`.
+- `transcript.py` — JSONL append/path helpers. No SDK deps.
+- `ui.py` — per-turn rendering (`TurnRenderer`, tool-card spinners, footer formatting).
+- `prompts/system_prompt.txt` — loaded by `client._build_system_prompt` via `importlib.resources`. Edit the file, not Python.
+
+Constraints when modifying:
 
 - **`ALLOWED_TOOLS` is hard-coded** to `("Read", "Glob", "Grep", "WebFetch", "WebSearch")`. No `Bash` / `Write` / `Edit`. If you add a tool, justify it — chat is intentionally read-only.
-- **System prompt is loaded from `src/treebeard/prompts/system_prompt.txt`**, not a Python string literal. Edit the file. Today's UTC date is appended at session start to anchor relative-date phrasing.
 - **Archive guard is a PreToolUse hook** that denies `Read`/`Glob`/`Grep` whose path resolves into `<vault>/.treebeard/archive/`. Any new path-bearing tool needs the same treatment.
 - **`setting_sources=["project"]`** — the vault's `.claude/CLAUDE.md` and `.claude/` config flow through; the user's global Claude Code agent prompt and MCP servers are excluded by design.
+- **Don't widen `chat/__init__.py`'s re-exports.** External callers see `run_repl` and `ALLOWED_TOOLS`. Tests reach into `treebeard.chat.client`, `treebeard.chat.slash`, etc. directly — that's the intended seam, not a leak.
+- **Time goes through `treebeard.timefmt` as a module call.** Chat code does `from treebeard import timefmt` and calls `timefmt.now_utc()`, so a single `monkeypatch.setattr(timefmt_mod, "now_utc", ...)` covers every chat consumer. Don't reintroduce `from treebeard.timefmt import now_utc` inside the chat package.
 
 ### Startup performance
 

@@ -11,12 +11,12 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from treebeard import chat as chat_mod
 from treebeard import cli as cli_mod
 from treebeard import config as config_mod
 from treebeard import editor as editor_mod
 from treebeard import indexer as indexer_mod
 from treebeard import timefmt as timefmt_mod
+from treebeard.chat import client as chat_client_mod
 from treebeard.commands import daily as daily_cmd
 from treebeard.commands import note as note_cmd
 from treebeard.commands import open_ as open_cmd
@@ -129,7 +129,6 @@ def freeze_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
     monkeypatch.setattr(timefmt_mod, "now_utc", fake_now)
     monkeypatch.setattr(note_cmd, "now_utc", fake_now)
     monkeypatch.setattr(open_cmd, "now_utc", fake_now)
-    monkeypatch.setattr(chat_mod, "now_utc", fake_now)
     monkeypatch.setattr(daily_cmd, "now_utc", fake_now)
     monkeypatch.setattr(cli_mod, "now_utc", fake_now)
     monkeypatch.setattr(indexer_mod, "_now_utc", fake_now)
@@ -143,7 +142,7 @@ def freeze_today(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def mock_claude_sdk(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Patch `treebeard.chat._make_client` with a stub `ClaudeSDKClient` shape
+    """Patch `treebeard.chat.client.make_client` with a stub `ClaudeSDKClient` shape
     that the Claude Agent SDK exposes. Mutate the returned dict to
     customize per-test behavior:
       - `replies`: list[list[str]] — per-turn token chunks
@@ -272,5 +271,5 @@ def mock_claude_sdk(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
                 uuid=None,
             )
 
-    monkeypatch.setattr(chat_mod, "_make_client", lambda _vault, _model: _FakeClient())
+    monkeypatch.setattr(chat_client_mod, "make_client", lambda _vault, _model: _FakeClient())
     return state

@@ -39,7 +39,7 @@ def conversations_dir(vault: pathlib.Path) -> pathlib.Path:
 
 
 # Vault-relative form used by guard logic that compares string-form
-# paths against archive membership (see `treebeard.chat._path_targets_archive`).
+# paths against archive membership (see `treebeard.chat.client._path_targets_archive`).
 # `PurePosixPath` so the displayed form stays `.treebeard/archive` regardless
 # of host OS.
 ARCHIVE_REL = pathlib.PurePosixPath(TREEBEARD_DIRNAME) / ARCHIVE_DIRNAME

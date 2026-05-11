@@ -292,9 +292,10 @@ def test_client_options_open_session_in_vault_with_readonly_tools(
     prompt with a vault-aware one."""
     from claude_agent_sdk import ClaudeSDKClient
 
-    from treebeard.chat import ALLOWED_TOOLS, _make_client
+    from treebeard.chat import ALLOWED_TOOLS
+    from treebeard.chat.client import make_client
 
-    client = _make_client(vault, "sonnet")
+    client = make_client(vault, "sonnet")
     assert isinstance(client, ClaudeSDKClient)
     options = client.options
     # Read-only tools only — no Bash, Write, Edit, etc.
@@ -326,7 +327,7 @@ def test_archive_guard_denies_read_into_archive(vault: pathlib.Path) -> None:
     surface archived notes."""
     import asyncio
 
-    from treebeard.chat import _archive_guard_hook
+    from treebeard.chat.client import _archive_guard_hook
 
     hook = _archive_guard_hook(vault)
 
@@ -375,9 +376,9 @@ def test_archive_guard_denies_read_into_archive(vault: pathlib.Path) -> None:
 def test_make_client_wires_archive_guard_hook(vault: pathlib.Path) -> None:
     """The client options should register a PreToolUse hook on
     Read|Glob|Grep so the archive guard runs before any read tool fires."""
-    from treebeard.chat import _make_client
+    from treebeard.chat.client import make_client
 
-    client = _make_client(vault, "sonnet")
+    client = make_client(vault, "sonnet")
     options = client.options
     assert options.hooks is not None
     pre_tool_use = options.hooks.get("PreToolUse") or []
@@ -771,7 +772,7 @@ def test_tool_label_formatting_unit() -> None:
     """`tool_label` builds compact titles from each tool's input shape."""
     from claude_agent_sdk import ToolUseBlock
 
-    from treebeard.chat_ui import tool_label
+    from treebeard.chat.ui import tool_label
 
     cases: list[tuple[ToolUseBlock, str]] = [
         (ToolUseBlock(id="x", name="Read", input={"file_path": "notes/foo.md"}), "Read foo.md"),
@@ -807,7 +808,7 @@ def test_tool_label_formatting_unit() -> None:
 
 def test_format_token_count_unit() -> None:
     """`format_token_count` collapses thousands tidily."""
-    from treebeard.chat_ui import format_token_count
+    from treebeard.chat.ui import format_token_count
 
     assert format_token_count(0) == "0"
     assert format_token_count(42) == "42"
@@ -819,7 +820,7 @@ def test_format_token_count_unit() -> None:
 
 def test_format_duration_unit() -> None:
     """Sub-second durations stay in ms; otherwise 1 decimal of seconds."""
-    from treebeard.chat_ui import format_duration
+    from treebeard.chat.ui import format_duration
 
     assert format_duration(50) == "50ms"
     assert format_duration(999) == "999ms"
@@ -832,7 +833,7 @@ def test_summarize_tool_result_unit() -> None:
     archive denial surfaces with friendly prefix."""
     from claude_agent_sdk import ToolResultBlock
 
-    from treebeard.chat_ui import summarize_tool_result
+    from treebeard.chat.ui import summarize_tool_result
 
     # Short string content → first non-empty line.
     assert (
@@ -877,7 +878,7 @@ def test_summarize_tool_result_unit() -> None:
 
 def test_spinner_text_for_unit() -> None:
     """Spinner labels reflect what the model is actually doing."""
-    from treebeard.chat_ui import SpinnerState, spinner_text_for
+    from treebeard.chat.ui import SpinnerState, spinner_text_for
 
     assert spinner_text_for(SpinnerState.AWAIT) == "thinking…"
     assert spinner_text_for(SpinnerState.COMPOSING) == "composing reply…"
@@ -910,7 +911,7 @@ def test_turn_renderer_tty_mode_renders_response_and_footer(vault: pathlib.Path)
     )
     from rich.console import Console
 
-    from treebeard.chat_ui import TurnRenderer
+    from treebeard.chat.ui import TurnRenderer
 
     del vault  # Just need a fixture for monkeypatched defaults.
 
@@ -1038,7 +1039,7 @@ def test_turn_renderer_finalize_is_idempotent() -> None:
 
     from rich.console import Console
 
-    from treebeard.chat_ui import TurnRenderer
+    from treebeard.chat.ui import TurnRenderer
 
     buf = io.StringIO()
     out = Console(file=buf, force_terminal=False, width=120)
@@ -1056,9 +1057,10 @@ def test_slash_completer_suggests_only_when_buffer_starts_with_slash() -> None:
     so adding a new handler automatically lights up in tab completion."""
     from prompt_toolkit.document import Document
 
-    from treebeard.chat import SLASH_HANDLERS, _SlashCompleter
+    from treebeard.chat.prompt import SlashCompleter
+    from treebeard.chat.slash import SLASH_HANDLERS
 
-    completer = _SlashCompleter(SLASH_HANDLERS.keys())
+    completer = SlashCompleter(SLASH_HANDLERS.keys())
 
     # Empty buffer / prose: no suggestions.
     assert list(completer.get_completions(Document(""), None)) == []
@@ -1088,10 +1090,10 @@ def test_build_prompt_session_returns_none_when_stdin_not_a_tty(
 ) -> None:
     """When stdin isn't a TTY (CliRunner, pipes), prompt_toolkit must
     not be initialised — the `input()` fallback path takes over."""
-    from treebeard.chat import _build_prompt_session
+    from treebeard.chat.prompt import build_prompt_session
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    assert _build_prompt_session() is None
+    assert build_prompt_session() is None
 
 
 def test_build_prompt_session_constructs_when_stdin_is_a_tty(
@@ -1101,12 +1103,12 @@ def test_build_prompt_session_constructs_when_stdin_is_a_tty(
     PromptSession wired up with the slash completer."""
     from prompt_toolkit import PromptSession
 
-    from treebeard.chat import _build_prompt_session, _SlashCompleter
+    from treebeard.chat.prompt import SlashCompleter, build_prompt_session
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    session = _build_prompt_session()
+    session = build_prompt_session()
     assert isinstance(session, PromptSession)
-    assert isinstance(session.completer, _SlashCompleter)
+    assert isinstance(session.completer, SlashCompleter)
 
 
 def test_turn_renderer_close_all_lives_marks_pending_tools_interrupted() -> None:
@@ -1120,7 +1122,7 @@ def test_turn_renderer_close_all_lives_marks_pending_tools_interrupted() -> None
     from claude_agent_sdk import AssistantMessage, ToolUseBlock
     from rich.console import Console
 
-    from treebeard.chat_ui import TurnRenderer
+    from treebeard.chat.ui import TurnRenderer
 
     buf = io.StringIO()
     out = Console(file=buf, force_terminal=True, width=120, legacy_windows=False)
