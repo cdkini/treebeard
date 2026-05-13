@@ -6,15 +6,14 @@ the shared `sync()` driver can land in the vault.
 API shape (from docs.granola.ai/api-reference):
   - GET /notes?updated_after=…&cursor=…&page_size=…
       → { notes: NoteSummary[], hasMore, cursor }
-  - GET /notes/{id}?include=transcript
+  - GET /notes/{id}
       → { id, title, created_at, updated_at, summary_markdown,
-          transcript: [{speaker:{source,…}, text, start_time, end_time}],
           web_url, … }
 
 The list endpoint returns metadata only; we re-fetch each note by id to
-get `summary_markdown` and the transcript. That's an N+1 by design, but
-the public API rate limit (5 req/s sustained) is well within reach for
-typical personal volumes.
+get `summary_markdown`. That's an N+1 by design, but the public API
+rate limit (5 req/s sustained) is well within reach for typical
+personal volumes.
 """
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ class GranolaImporter:
         ]
 
     def fetch_one(self, summary: NoteSummary) -> ImportedNote:
-        """Hit `/notes/{id}?include=transcript` for the full payload."""
+        """Hit `/notes/{id}` for the full payload."""
         return _to_imported_note(self._get_note(summary.import_id))
 
     def _list_notes(self, since: datetime) -> Iterator[dict[str, Any]]:
@@ -85,7 +84,7 @@ class GranolaImporter:
                 return
 
     def _get_note(self, note_id: str) -> dict[str, Any]:
-        return self._get(f"/notes/{note_id}", params={"include": "transcript"})
+        return self._get(f"/notes/{note_id}", params={})
 
     def _get(self, path: str, *, params: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -125,32 +124,12 @@ def _to_imported_note(note: dict[str, Any]) -> ImportedNote:
 
 
 def _render_body(note: dict[str, Any]) -> str:
-    """Build the markdown body: AI summary, then transcript."""
+    """Build the markdown body from the AI summary."""
     parts: list[str] = ["\n"]
     summary = note.get("summary_markdown")
     if summary:
         parts.append(summary.rstrip() + "\n")
-    transcript = note.get("transcript")
-    if transcript:
-        if summary:
-            parts.append("\n")
-        parts.append("## Transcript\n\n")
-        for turn in transcript:
-            label = _speaker_label(turn.get("speaker") or {})
-            text = (turn.get("text") or "").strip()
-            if not text:
-                continue
-            parts.append(f"**{label}:** {text}\n\n")
     return "".join(parts)
-
-
-def _speaker_label(speaker: dict[str, Any]) -> str:
-    """Prefer the diarization label; fall back to the audio source."""
-    label = speaker.get("diarization_label")
-    if isinstance(label, str) and label.strip():
-        return label.strip()
-    src = speaker.get("source")
-    return src if isinstance(src, str) and src else "speaker"
 
 
 def _parse_iso8601(value: str) -> datetime:

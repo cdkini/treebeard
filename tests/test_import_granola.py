@@ -45,21 +45,8 @@ def fake_note(
     created_at: str = "2026-05-07T14:00:00Z",
     updated_at: str = "2026-05-07T14:30:00Z",
     summary: str = "Discussed the roadmap.",
-    transcript: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a Granola GET /notes/{id} payload."""
-    if transcript is None:
-        transcript = [
-            {
-                "speaker": {
-                    "source": "microphone",
-                    "diarization_label": "Sarah",
-                },
-                "text": "Hey there.",
-                "start_time": created_at,
-                "end_time": updated_at,
-            },
-        ]
     return {
         "id": note_id,
         "object": "note",
@@ -68,7 +55,6 @@ def fake_note(
         "updated_at": updated_at,
         "summary_markdown": summary,
         "summary_text": summary,
-        "transcript": transcript,
         "web_url": f"https://notes.granola.ai/d/{note_id}",
     }
 
@@ -188,8 +174,8 @@ def test_first_import_writes_notes(
     assert "import_url: https://notes.granola.ai/d/not_aaaaaaaaaaaaaa" in a
     assert "tags: [granola]" in a
     assert "Discussed the roadmap." in a
-    assert "## Transcript" in a
-    assert "**Sarah:** Hey there." in a
+    assert "## Transcript" not in a
+    assert "Hey there." not in a
 
     b = (vault / "granola-2026-05-08-1-1-with-sarah.md").read_text(encoding="utf-8")
     assert "import_id: not_bbbbbbbbbbbbbb" in b
